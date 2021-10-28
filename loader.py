@@ -18,6 +18,7 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir, self.images[idx])
         image = read_image(img_path)
+        image = image.to(dtype=torch.float) / 255
         return image
 
     def get_img(self, idx):

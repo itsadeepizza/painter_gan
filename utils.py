@@ -10,3 +10,4 @@ def show_set_images(imgs):
     fig, ax = plt.subplots(nrows=rows, ncols=cols, figsize=(10,7))
     for i in range(n):
         ax[i // cols][i % cols].imshow(imgs[i])
+    fig.savefig("image_test.png")

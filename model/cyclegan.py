@@ -1,42 +1,89 @@
 import torch
+from icecream import ic
 from torch.nn import Module
 
 class ConvInstNormRelu(torch.nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size, filters, stride):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
-        super(self, ConvInstNormRelu).__init__([torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride),
-        torch.nn.InstanceNorm2d(), torch.nn.ReLU()])
+        super(ConvInstNormRelu, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+        torch.nn.InstanceNorm2d(num_features=out_channels), torch.nn.ReLU())
+
+class TransposeConvInstNormRelu(torch.nn.Sequential):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
+        """`kernel_size` x `kernel_size` Convolution-Transpose-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
+        super(TransposeConvInstNormRelu, self).__init__(torch.nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+        torch.nn.InstanceNorm2d(out_channels), torch.nn.ReLU())
+
+class ConvInstNormLeakyRelu(torch.nn.Sequential):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
+        """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
+        super(ConvInstNormLeakyRelu, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+        torch.nn.InstanceNorm2d(out_channels), torch.nn.LeakyReLU(0.2))
 
 
-# Added relu, not sure if needed
-class ConvPair(Module):
-    def __init__(self, in_channels, out_channels):
-        self.c1 = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2)
-        self.c2 = torch.nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2)
-
-    def forward(self, x):
-        x = self.c1(x)
-        x = self.c2(x)
-        return torch.relu(x)
 
 class Generator(Module):
     def __init__(self):
 
-        super(self, Generator).__init__()
-        self.c1 = ConvInstNormRelu(256, 232, 7, 64, 1) # c7s1-64
-        ConvInstNormRelu(232, 228, 3, 128, 1)  #d128
-        ConvInstNormRelu(228, 224, 3, 256, 1)  # d256
+        super(Generator, self).__init__()
+        self.c1 = ConvInstNormRelu(in_channels=3, out_channels=64, kernel_size=7, stride=1, padding=3) # c7s1-64
+        self.c2 = ConvInstNormRelu(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1)  #d128
+        self.c3 = ConvInstNormRelu(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1)  # d256
+
+        self.r1 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r2 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r3 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r4 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r5 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r6 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r7 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r8 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r9 = ConvInstNormRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+
+        self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=0) #u128
+        self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=0)  # u64
+
+        self.c4 = ConvInstNormRelu(in_channels=64, out_channels=3, kernel_size=7, stride=1, padding=1)  # c7s1-3
 
 
     def forward(self, x):
+        x = self.c1(x)
+        x = self.c2(x)
+        x = self.c3(x)
+
+        x = x + self.r1(x)
+        x = x + self.r2(x)
+        x = x + self.r3(x)
+        x = x + self.r4(x)
+        x = x + self.r5(x)
+        x = x + self.r6(x)
+        x = x + self.r7(x)
+        x = x + self.r8(x)
+        x = x + self.r9(x)
+
+        x = self.u1(x)
+        x = self.u2(x)
+        x = torch.nn.functional.pad(x, (0, 1, 0, 1), mode='replicate')
+        x = self.c4(x)
         return x
 
 
 class Discriminator(Module):
     def __init__(self):
-        super(self, Discriminator).__init__()
+        super(Discriminator, self).__init__()
+        self.c1 = torch.nn.Conv2d(3, 64, kernel_size=4, stride=2) # C64 without instance norm
+        self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=4, stride=2)  # C128
+        self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=4, stride=2)  # C256
+        self.c4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=512, kernel_size=4, stride=2)  # C512
+        self.c5 = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=14)
 
     def forward(self, x):
+        x = self.c1(x)
+        x = torch.relu(x)
+        x = self.c2(x)
+        x = self.c3(x)
+        x = self.c4(x)
+        x = self.c5(x).view(-1, 1)
         return x
 
 #generator
