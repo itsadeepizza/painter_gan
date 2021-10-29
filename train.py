@@ -7,7 +7,7 @@ from tqdm import tqdm
 import random
 import numpy as np
 
-num_epochs = 100
+num_epochs = 200
 batch_size = 1
 lr = 0.0002
 momentum = 0.9
@@ -46,7 +46,7 @@ opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
 
 
 def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
-    n= 10
+    n= 100
     gan_loss = torch.nn.BCEWithLogitsLoss()
     cycle_loss = torch.nn.L1Loss()
     for i in range(n):
@@ -80,7 +80,7 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         cycleloss_FG = cycle_loss(reconstructed_photo, photo)
         cycleloss_GF = cycle_loss(reconstructed_monet, monet)
 
-        # GAN loss
+        # GAN loss discriminator
         # D_photo vs F
         dloss_photo_real = gan_loss(D_photo(photo), 1)
         dloss_photo_fake = gan_loss(D_photo(fake_photo), 0)
@@ -95,19 +95,45 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         total_loss.backward()
 
         #Tensorboard
-        writer.add_scalar("training loss",
-                          total_loss,
-                          epoch * 10 + i)
+        writer.add_scalar("cycle loss",
+                          cycle_losses,
+                          epoch * n + i)
+        writer.add_scalar("d_photo loss",
+                          dloss_photo,
+                          epoch * n + i)
+        writer.add_scalar("d_monet loss",
+                          dloss_monet,
+                          epoch * n + i)
+        writer.add_scalar("gan F loss",
+                          floss_photo_fake,
+                          epoch * n + i)
+        writer.add_scalar("gan G loss",
+                          gloss_monet_fake,
+                          epoch * n + i)
 
-        writer.add_image('fake_monet', fake_monet[0].cpu())
 
-        opt_F.step()
-        opt_Dm.step()
-        opt_Dp.step()
-        opt_G.step()
 
-        # Drop gradients
-        # TODO
+        if i%13 == 0:
+            # create grid of images
+            monet_grid = torchvision.utils.make_grid(monet.cpu())
+            photo_grid = torchvision.utils.make_grid(photo.cpu())
+            fake_monet_grid = torchvision.utils.make_grid(fake_monet.cpu())
+            fake_photo_grid = torchvision.utils.make_grid(fake_photo.cpu())
+            reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
+            reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
+
+            # write to tensorboard
+            writer.add_image("photo", photo_grid)
+            writer.add_image('fake_monet', fake_monet_grid)
+            writer.add_image("monet", monet_grid)
+            writer.add_image('fake_photo', fake_photo_grid)
+            writer.add_image('reconstructed_photo', reconstructed_photo_grid)
+            writer.add_image('reconstructed_monet', reconstructed_monet_grid)
+
+
+
+
+
 
 
 for epoch in tqdm(range(num_epochs)):
