@@ -38,21 +38,22 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
     # Create iterator
     monet_iterator = iter(monet_dl)
     photo_iterator = iter(photo_dl)
-    for i in range(10):
+    for i in range(n):
         # iterate through the dataloader
         photo = next(photo_iterator)
         monet = next(monet_iterator)
-
         # Load to GPU
         photo = photo.to(device)
         monet = monet.to(device)
         # Drop gradients
         opt_G_photo.zero_grad()
-        opt_G_monet .zero_grad()
+        opt_G_monet.zero_grad()
         opt_Dm.zero_grad()
         opt_Dp.zero_grad()
 
-
+        #=============================
+        # IMAGE GENERATION
+        #=============================
         # generate fakes
         fake_monet = G_monet (photo)
         fake_photo = G_photo(monet)
@@ -60,44 +61,51 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
         reconstructed_photo = G_photo(fake_monet)
         reconstructed_monet = G_monet(fake_photo)
 
+        # =========================
+        # GAN loss discriminator
+        # ========================
+        # D_photo vs G_photo
+        dloss_photo_real = gan_loss(D_photo(photo), torch.ones(batch_size, 1).to(device))
+        dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.zeros(batch_size, 1).to(device))
+        # D_monet vs G
+        dloss_monet_real = gan_loss(D_monet(monet), torch.ones(batch_size, 1).to(device))
+        dloss_monet_fake = gan_loss(D_monet(fake_monet.detach()), torch.zeros(batch_size, 1).to(device))
+        dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
+        dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
+        dloss_total = dloss_photo + dloss_monet
+
+        # Update backpropagation
+        dloss_total.backward()
+        opt_Dm.step()
+        opt_Dp.step()
+
+        # Drop discriminant gradient for this loss ???WHY?
+        opt_Dm.zero_grad()
+        opt_Dp.zero_grad()
+
+        #========================
+        # LOSS GENERATOR
+        #========================
+
         # Cycle loss
         cycleloss_G_photoG_monet= cycle_loss(photo, reconstructed_photo)
         cycleloss_G_monetG_photo = cycle_loss(monet, reconstructed_monet)
+        cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
         # GAN loss generator
         gloss_monet_fake = gan_loss(D_monet(fake_monet), torch.ones(batch_size,1).to(device))
         floss_photo_fake = gan_loss(D_photo(fake_photo), torch.ones(batch_size,1).to(device))
-
         gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
 
-        # Drop discriminant gradient for this loss
-        opt_Dm.zero_grad()
-        opt_Dp.zero_grad()
+        generator_loss = l * cycle_losses + gan_generator_losses
+        generator_loss.backward()
 
-        # GAN loss discriminator
-        # D_photo vs G_photo
-        dloss_photo_real = gan_loss(D_photo(photo), torch.ones(batch_size,1).to(device))
-        dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.zeros(batch_size,1).to(device))
-        # D_monet vs G
-        dloss_monet_real = gan_loss(D_monet(monet), torch.ones(batch_size,1).to(device))
-        dloss_monet_fake = gan_loss(D_monet(fake_monet.detach()), torch.zeros(batch_size,1).to(device))
-
-        # total loss and backpropagation
-        l = 10
-        dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
-        dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
-        cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
-        total_loss = l * cycle_losses + dloss_photo + dloss_monet + gan_generator_losses
-        total_loss.backward()
-
-        # Update backpropagation
-        opt_Dm.step()
-        opt_Dp.step()
+        # Update backpropagation for generators
         opt_G_photo.step()
         opt_G_monet.step()
 
-
-        print("total loss is ", total_loss.item())
+        total_loss = generator_loss.item() + dloss_total.item()
+        print("total loss is ", total_loss)
         #print("cycle loss is ", cycle_losses.item())
         #print("d photo loss is ", dloss_photo.item())
         #print("d monet loss is ", dloss_monet.item())
@@ -120,7 +128,7 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
                            gloss_monet_fake.item(),
                            epoch * n + i)
         writer.add_scalar("total loss",
-                          total_loss.item(),
+                          total_loss,
                           epoch * n + i)
 
 
@@ -148,11 +156,14 @@ def test_one_epoch(G_photo, epoch):
         new_im = G_photo(im_ten)
         torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
 
+#=============================
 # CHOICE OF HYPERPARAMETERS
+#=============================
 num_epochs = 200
 batch_size = 1
-lr = 0.001 #0.0002
+lr = 0.0002 #0.0002
 momentum = 0.1
+l = 10 # ratio CYCLE loss / GAN LOSS
 
 
 # Choose device
