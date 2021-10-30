@@ -5,15 +5,18 @@ from model.cyclegan import Generator, Discriminator
 from loader import ImageDataset
 from tqdm import tqdm
 import random
+import datetime
+import os
 import numpy as np
 
 num_epochs = 200
 batch_size = 1
-lr = 0.0002
-momentum = 0.9
-# Load dataset
+lr = 0.001 #0.0002
+momentum = 0.1
+# Choose device
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 # Dataset: https://www.kaggle.com/c/gan-getting-started/data
+# Load dataset
 monet_path_train = "dataset/train/monet/"
 photo_path_train = "dataset/train/photos/"
 photo_path_test = "dataset/test/photos/"
@@ -30,28 +33,34 @@ photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
                                                shuffle=True,
                                                num_workers=1
                                                )
-# Optimizer
+
+def load_models(path=None):
+    F = Generator().to(device)  # photo generator
+    G = Generator().to(device)  # monet generator
+    D_monet = Discriminator().to(device)  # 1 real, 0 fake
+    D_photo = Discriminator().to(device)
+    if path is not None:
+        F.load_state_dict(torch.load(path + "/F.pth"))
+        G.load_state_dict(torch.load(path+  "/G.pth"))
+        D_monet.load_state_dict(torch.load(path + "/D_monet.pth"))
+        D_photo.load_state_dict(torch.load(path + "/D_photo.pth"))
+        F.eval()
+        G.eval()
+        D_monet.eval()
+        D_photo.eval()
+    return F, G, D_monet, D_photo
 
 
-# Load model
 
-F = Generator().to(device) # photo generator
-G = Generator().to(device) # monet generator
-D_monet = Discriminator().to(device) # 1 real, 0 fake
-D_photo = Discriminator().to(device)
-
-opt_F = torch.optim.SGD(lr=lr, params=F.parameters(), momentum=momentum)
-opt_G = torch.optim.SGD(lr=lr, params=G.parameters(), momentum=momentum)
-opt_Dm = torch.optim.SGD(lr=lr, params=D_monet.parameters(), momentum=momentum)
-opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
 
 
 def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
     n= 100
-    gan_loss = torch.nn.BCEWithLogitsLoss()
-    #gan_loss = torch.nn.MSELoss()
+    gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
     for i in range(n):
+
+        # Choose random photo and painting
         photo1 = random.choice(photo_dl)
         monet1 = random.choice(monet_dl)
 
@@ -60,15 +69,14 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
 
         photo = torch.stack([photo1])
         monet = torch.stack([monet1])
+        # Load to GPU
         photo = photo.to(device)
         monet = monet.to(device)
-
+        # Drop gradients
         opt_F.zero_grad()
         opt_G.zero_grad()
         opt_Dm.zero_grad()
         opt_Dp.zero_grad()
-
-        # Choose random photo and painting
 
 
         # generate fakes
@@ -88,10 +96,10 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
 
         gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
 
+        # Drop discriminant gradient for this loss
         opt_Dm.zero_grad()
         opt_Dp.zero_grad()
 
-        print(D_photo(photo))
         # GAN loss discriminator
         # D_photo vs F
         dloss_photo_real = gan_loss(D_photo(photo), torch.FloatTensor([[1]]).to(device))
@@ -108,7 +116,7 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         total_loss = l * cycle_losses + dloss_photo + dloss_monet + gan_generator_losses
         total_loss.backward()
 
-
+        # Update backpropagation
         opt_Dm.step()
         opt_Dp.step()
         opt_F.step()
@@ -121,9 +129,7 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         #print("d monet loss is ", dloss_monet.item())
 
 
-
-
-        #Tensorboard
+        #Upload losses to Tensorboard
         writer.add_scalar("cycle loss",
                           cycle_losses.item(),
                           epoch * n + i)
@@ -144,7 +150,7 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
                           epoch * n + i)
 
 
-
+        # Upload images to tensorboard
         if i%3 == 0:
             # create grid of images
             monet_grid = torchvision.utils.make_grid(monet.cpu())
@@ -162,17 +168,24 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
             writer.add_image('reconstructed_photo', reconstructed_photo_grid)
             writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
+def test_one_epoch(F, epoch):
+    im_ten = photo_dataset_test[0].unsqueeze(0).to(device)
+    with torch.no_grad():
+        new_im = F(im_ten)
+        torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
+
+# Load model (if path is None create a new model
+F, G, D_monet, D_photo = load_models(path="runs/fit/20211030-000230/models")
 
 
-
-
-
+# Optimizer
+opt_F = torch.optim.SGD(lr=lr, params=F.parameters(), momentum=momentum)
+opt_G = torch.optim.SGD(lr=lr, params=G.parameters(), momentum=momentum)
+opt_Dm = torch.optim.SGD(lr=lr, params=D_monet.parameters(), momentum=momentum)
+opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
 
 photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
 monet_sampler = torch.utils.data.RandomSampler(monet_dataset, replacement=False)
-#Start tensor board
-import datetime
-import os
 
 # Create directories for logs
 log_dir = "runs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -184,15 +197,16 @@ os.mkdir(summary_dir)
 os.mkdir(models_dir)
 os.mkdir(test_dir)
 
+
+test_one_epoch(F, -1)
+
 # Start tensorboard
 #type "tensorboard --logdir=runs" in terminal
 writer = SummaryWriter(summary_dir)
 
-def test_one_epoch(F, epoch):
-    im_ten = photo_dataset_test[0].unsqueeze(0).to(device)
-    with torch.no_grad():
-        new_im = F(im_ten)
-        torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
+
+
+
 
 for epoch in tqdm(range(num_epochs)):
     print("Epoch:", epoch)
