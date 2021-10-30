@@ -9,52 +9,29 @@ import datetime
 import os
 import numpy as np
 
-num_epochs = 200
-batch_size = 1
-lr = 0.001 #0.0002
-momentum = 0.1
-# Choose device
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-# Dataset: https://www.kaggle.com/c/gan-getting-started/data
-# Load dataset
-monet_path_train = "dataset/train/monet/"
-photo_path_train = "dataset/train/photos/"
-photo_path_test = "dataset/test/photos/"
-monet_dataset = ImageDataset(monet_path_train)
-photo_dataset = ImageDataset(photo_path_train)
-photo_dataset_test = ImageDataset(photo_path_test)
-monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
-                                               batch_size=batch_size,
-                                               shuffle=True,
-                                               num_workers=0
-                                               )
-photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
-                                               batch_size=batch_size,
-                                               shuffle=True,
-                                               num_workers=0
-                                               )
 
 def load_models(path=None):
-    F = Generator().to(device)  # photo generator
-    G = Generator().to(device)  # monet generator
-    D_monet = Discriminator().to(device)  # 1 real, 0 fake
+    """Create models and load weights from a path if specified"""
+    G_photo = Generator().to(device)  # photo generator
+    G_monet= Generator().to(device)  # monet generator
+    D_monet = Discriminator().to(device)  # 1=real, 0=fake
     D_photo = Discriminator().to(device)
     if path is not None:
-        F.load_state_dict(torch.load(path + "/F.pth"))
-        G.load_state_dict(torch.load(path+  "/G.pth"))
+        G_photo.load_state_dict(torch.load(path + "/G_photo.pth"))
+        G_monet.load_state_dict(torch.load(path+  "/G_monet.pth"))
         D_monet.load_state_dict(torch.load(path + "/D_monet.pth"))
         D_photo.load_state_dict(torch.load(path + "/D_photo.pth"))
-        F.eval()
-        G.eval()
+        G_photo.eval()
+        G_monet .eval()
         D_monet.eval()
         D_photo.eval()
-    return F, G, D_monet, D_photo
+    return G_photo, G_monet , D_monet, D_photo
 
 
 
 
 
-def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
+def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_dl):
     n= 100
     gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
@@ -70,22 +47,22 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         photo = photo.to(device)
         monet = monet.to(device)
         # Drop gradients
-        opt_F.zero_grad()
-        opt_G.zero_grad()
+        opt_G_photo.zero_grad()
+        opt_G_monet .zero_grad()
         opt_Dm.zero_grad()
         opt_Dp.zero_grad()
 
 
         # generate fakes
-        fake_monet = G(photo)
-        fake_photo = F(monet)
+        fake_monet = G_monet (photo)
+        fake_photo = G_photo(monet)
         # generate cycles
-        reconstructed_photo = F(fake_monet)
-        reconstructed_monet = G(fake_photo)
+        reconstructed_photo = G_photo(fake_monet)
+        reconstructed_monet = G_monet(fake_photo)
 
         # Cycle loss
-        cycleloss_FG = cycle_loss(photo, reconstructed_photo)
-        cycleloss_GF = cycle_loss(monet, reconstructed_monet)
+        cycleloss_G_photoG_monet= cycle_loss(photo, reconstructed_photo)
+        cycleloss_G_monetG_photo = cycle_loss(monet, reconstructed_monet)
 
         # GAN loss generator
         gloss_monet_fake = gan_loss(D_monet(fake_monet), torch.ones(batch_size,1).to(device))
@@ -98,7 +75,7 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         opt_Dp.zero_grad()
 
         # GAN loss discriminator
-        # D_photo vs F
+        # D_photo vs G_photo
         dloss_photo_real = gan_loss(D_photo(photo), torch.ones(batch_size,1).to(device))
         dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.zeros(batch_size,1).to(device))
         # D_monet vs G
@@ -109,15 +86,15 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         l = 10
         dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
         dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
-        cycle_losses = (cycleloss_FG + cycleloss_GF).sum()
+        cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
         total_loss = l * cycle_losses + dloss_photo + dloss_monet + gan_generator_losses
         total_loss.backward()
 
         # Update backpropagation
         opt_Dm.step()
         opt_Dp.step()
-        opt_F.step()
-        opt_G.step()
+        opt_G_photo.step()
+        opt_G_monet.step()
 
 
         print("total loss is ", total_loss.item())
@@ -136,10 +113,10 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         writer.add_scalar("d_monet loss",
                           dloss_monet.item(),
                           epoch * n + i)
-        writer.add_scalar("gan F loss",
+        writer.add_scalar("gan G_photo loss",
                            floss_photo_fake.item(),
                            epoch * n + i)
-        writer.add_scalar("gan G loss",
+        writer.add_scalar("gan G_monetloss",
                            gloss_monet_fake.item(),
                            epoch * n + i)
         writer.add_scalar("total loss",
@@ -165,19 +142,47 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
             writer.add_image('reconstructed_photo', reconstructed_photo_grid)
             writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
-def test_one_epoch(F, epoch):
+def test_one_epoch(G_photo, epoch):
     im_ten = photo_dataset_test[0].unsqueeze(0).to(device)
     with torch.no_grad():
-        new_im = F(im_ten)
+        new_im = G_photo(im_ten)
         torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
 
+# CHOICE OF HYPERPARAMETERS
+num_epochs = 200
+batch_size = 1
+lr = 0.001 #0.0002
+momentum = 0.1
+
+
+# Choose device
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+# Dataset: https://www.kaggle.com/c/gan-getting-started/data
+# Load dataset
+monet_path_train = "dataset/train/monet/"
+photo_path_train = "dataset/train/photos/"
+photo_path_test = "dataset/test/photos/"
+monet_dataset = ImageDataset(monet_path_train)
+photo_dataset = ImageDataset(photo_path_train)
+photo_dataset_test = ImageDataset(photo_path_test)
+monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
+                                               batch_size=batch_size,
+                                               shuffle=True,
+                                               num_workers=0
+                                               )
+photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
+                                               batch_size=batch_size,
+                                               shuffle=True,
+                                               num_workers=0
+                                               )
+
 # Load model (if path is None create a new model
-F, G, D_monet, D_photo = load_models(path="runs/fit/20211030-000230/models")
+G_photo, G_monet, D_monet, D_photo = load_models(path="runs/fit/20211030-000230/models")
 
 
 # Optimizer
-opt_F = torch.optim.SGD(lr=lr, params=F.parameters(), momentum=momentum)
-opt_G = torch.optim.SGD(lr=lr, params=G.parameters(), momentum=momentum)
+opt_G_photo = torch.optim.SGD(lr=lr, params=G_photo.parameters(), momentum=momentum)
+opt_G_monet = torch.optim.SGD(lr=lr, params=G_monet.parameters(), momentum=momentum)
 opt_Dm = torch.optim.SGD(lr=lr, params=D_monet.parameters(), momentum=momentum)
 opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
 
@@ -195,7 +200,7 @@ os.mkdir(models_dir)
 os.mkdir(test_dir)
 
 
-test_one_epoch(F, -1)
+test_one_epoch(G_photo, -1)
 
 # Start tensorboard
 #type "tensorboard --logdir=runs" in terminal
@@ -207,10 +212,10 @@ writer = SummaryWriter(summary_dir)
 
 for epoch in tqdm(range(num_epochs)):
     print("Epoch:", epoch)
-    torch.save(F.state_dict(), models_dir + "/F.pth")
-    torch.save(G.state_dict(), models_dir + "/G.pth")
+    torch.save(G_photo.state_dict(), models_dir + "/G_photo.pth")
+    torch.save(G_monet.state_dict(), models_dir + "/G_monet.pth")
     torch.save(D_monet.state_dict(), models_dir + "/D_monet.pth")
     torch.save(D_photo.state_dict(), models_dir + "/D_photo.pth")
-    train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dataloader, monet_dataloader)
-    test_one_epoch(F, epoch)
+    train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dataloader, monet_dataloader)
+    test_one_epoch(G_photo, epoch)
 
