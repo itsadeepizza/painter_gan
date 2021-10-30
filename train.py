@@ -48,16 +48,17 @@ opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
 def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
     n= 100
     gan_loss = torch.nn.BCEWithLogitsLoss()
+    #gan_loss = torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
     for i in range(n):
         photo1 = random.choice(photo_dl)
         monet1 = random.choice(monet_dl)
 
-        photo2 = random.choice(photo_dl)
-        monet2 = random.choice(monet_dl)
+        #photo2 = random.choice(photo_dl)
+        #monet2 = random.choice(monet_dl)
 
-        photo = torch.stack([photo1, photo2])
-        monet = torch.stack([monet1, monet2])
+        photo = torch.stack([photo1])
+        monet = torch.stack([monet1])
         photo = photo.to(device)
         monet = monet.to(device)
 
@@ -96,24 +97,27 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
 
         #Tensorboard
         writer.add_scalar("cycle loss",
-                          cycle_losses,
+                          cycle_losses.item(),
                           epoch * n + i)
         writer.add_scalar("d_photo loss",
-                          dloss_photo,
+                          dloss_photo.item(),
                           epoch * n + i)
         writer.add_scalar("d_monet loss",
-                          dloss_monet,
+                          dloss_monet.item(),
                           epoch * n + i)
         writer.add_scalar("gan F loss",
-                          floss_photo_fake,
-                          epoch * n + i)
+                           floss_photo_fake.item(),
+                           epoch * n + i)
         writer.add_scalar("gan G loss",
-                          gloss_monet_fake,
+                           gloss_monet_fake.item(),
+                           epoch * n + i)
+        writer.add_scalar("total loss",
+                          total_loss.item(),
                           epoch * n + i)
 
 
 
-        if i%13 == 0:
+        if i%3 == 0:
             # create grid of images
             monet_grid = torchvision.utils.make_grid(monet.cpu())
             photo_grid = torchvision.utils.make_grid(photo.cpu())
