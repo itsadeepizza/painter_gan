@@ -26,12 +26,12 @@ photo_dataset_test = ImageDataset(photo_path_test)
 monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
                                                batch_size=batch_size,
                                                shuffle=True,
-                                               num_workers=1
+                                               num_workers=0
                                                )
 photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
                                                batch_size=batch_size,
                                                shuffle=True,
-                                               num_workers=1
+                                               num_workers=0
                                                )
 
 def load_models(path=None):
@@ -58,17 +58,14 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
     n= 100
     gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
-    for i in range(n):
+    # Create iterator
+    monet_iterator = iter(monet_dl)
+    photo_iterator = iter(photo_dl)
+    for i in range(10):
+        # iterate through the dataloader
+        photo = next(photo_iterator)
+        monet = next(monet_iterator)
 
-        # Choose random photo and painting
-        photo1 = random.choice(photo_dl)
-        monet1 = random.choice(monet_dl)
-
-        #photo2 = random.choice(photo_dl)
-        #monet2 = random.choice(monet_dl)
-
-        photo = torch.stack([photo1])
-        monet = torch.stack([monet1])
         # Load to GPU
         photo = photo.to(device)
         monet = monet.to(device)
@@ -91,8 +88,8 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
         cycleloss_GF = cycle_loss(monet, reconstructed_monet)
 
         # GAN loss generator
-        gloss_monet_fake = gan_loss(D_monet(fake_monet), torch.FloatTensor([[1]]).to(device))
-        floss_photo_fake = gan_loss(D_photo(fake_photo), torch.FloatTensor([[1]]).to(device))
+        gloss_monet_fake = gan_loss(D_monet(fake_monet), torch.ones(batch_size,1).to(device))
+        floss_photo_fake = gan_loss(D_photo(fake_photo), torch.ones(batch_size,1).to(device))
 
         gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
 
@@ -102,11 +99,11 @@ def train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dl, monet_dl):
 
         # GAN loss discriminator
         # D_photo vs F
-        dloss_photo_real = gan_loss(D_photo(photo), torch.FloatTensor([[1]]).to(device))
-        dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.FloatTensor([[0]]).to(device))
+        dloss_photo_real = gan_loss(D_photo(photo), torch.ones(batch_size,1).to(device))
+        dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.zeros(batch_size,1).to(device))
         # D_monet vs G
-        dloss_monet_real = gan_loss(D_monet(monet), torch.FloatTensor([[1]]).to(device))
-        dloss_monet_fake = gan_loss(D_monet(fake_monet.detach()), torch.FloatTensor([[0]]).to(device))
+        dloss_monet_real = gan_loss(D_monet(monet), torch.ones(batch_size,1).to(device))
+        dloss_monet_fake = gan_loss(D_monet(fake_monet.detach()), torch.zeros(batch_size,1).to(device))
 
         # total loss and backpropagation
         l = 10
@@ -214,6 +211,6 @@ for epoch in tqdm(range(num_epochs)):
     torch.save(G.state_dict(), models_dir + "/G.pth")
     torch.save(D_monet.state_dict(), models_dir + "/D_monet.pth")
     torch.save(D_photo.state_dict(), models_dir + "/D_photo.pth")
-    train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dataset, monet_dataset)
+    train_one_epoch(epoch, F, G, D_photo, D_monet, photo_dataloader, monet_dataloader)
     test_one_epoch(F, epoch)
 
