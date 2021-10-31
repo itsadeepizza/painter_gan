@@ -150,18 +150,18 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
             writer.add_image('reconstructed_photo', reconstructed_photo_grid)
             writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
-def test_one_epoch(G_photo, epoch):
+def test_one_epoch(G_monet, epoch):
     im_ten = photo_dataset_test[0].unsqueeze(0).to(device)
     with torch.no_grad():
-        new_im = G_photo(im_ten)
+        new_im = G_monet(im_ten)
         torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
 
 #=============================
 # CHOICE OF HYPERPARAMETERS
 #=============================
-num_epochs = 200
+num_epochs = 400
 batch_size = 1
-lr = 0.0002 #0.0002
+lr = 0.001 #0.0002
 momentum = 0.1
 l = 10 # ratio CYCLE loss / GAN LOSS
 
@@ -188,7 +188,7 @@ photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
                                                )
 
 # Load model (if path is None create a new model
-G_photo, G_monet, D_monet, D_photo = load_models(path="runs/fit/20211030-000230/models")
+G_photo, G_monet, D_monet, D_photo = load_models(path=None)
 
 
 # Optimizer
@@ -211,7 +211,7 @@ os.mkdir(models_dir)
 os.mkdir(test_dir)
 
 
-test_one_epoch(G_photo, -1)
+test_one_epoch(G_monet, -1)
 
 # Start tensorboard
 #type "tensorboard --logdir=runs" in terminal

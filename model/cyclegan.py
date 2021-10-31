@@ -75,7 +75,7 @@ class Discriminator(Module):
         self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=4, stride=2)  # C128
         self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=4, stride=2)  # C256
         self.c4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=512, kernel_size=4, stride=2)  # C512
-        self.c5 = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=14)
+        self.c5 = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=1)
 
     def forward(self, x):
         x = self.c1(x)
@@ -83,7 +83,8 @@ class Discriminator(Module):
         x = self.c2(x)
         x = self.c3(x)
         x = self.c4(x)
-        x = self.c5(x).view(-1, 1)
+        x = self.c5(x)
+        x = x.mean().view(-1, 1)
         return x
 
 #generator
