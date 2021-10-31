@@ -32,7 +32,7 @@ def load_models(path=None):
 
 
 def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_dl):
-    n= 100
+    n = min(len(photo_dl), len(monet_dl))
     gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
     # Create iterator
@@ -160,7 +160,7 @@ def test_one_epoch(G_monet, epoch):
 # CHOICE OF HYPERPARAMETERS
 #=============================
 num_epochs = 400
-batch_size = 1
+batch_size = 2
 lr = 0.001 #0.0002
 momentum = 0.1
 l = 10 # ratio CYCLE loss / GAN LOSS
