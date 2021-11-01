@@ -10,17 +10,17 @@ import os
 import numpy as np
 
 
-def load_models(path=None):
+def load_models(path=None, epoch=None):
     """Create models and load weights from a path if specified"""
     G_photo = Generator().to(device)  # photo generator
     G_monet= Generator().to(device)  # monet generator
     D_monet = Discriminator().to(device)  # 1=real, 0=fake
     D_photo = Discriminator().to(device)
     if path is not None:
-        G_photo.load_state_dict(torch.load(path + "/G_photo.pth"))
-        G_monet.load_state_dict(torch.load(path+  "/G_monet.pth"))
-        D_monet.load_state_dict(torch.load(path + "/D_monet.pth"))
-        D_photo.load_state_dict(torch.load(path + "/D_photo.pth"))
+        G_photo.load_state_dict(torch.load(path + f"/G_photo_Ep{epoch:03d}.pth"))
+        G_monet.load_state_dict(torch.load(path+  f"/G_monet_Ep{epoch:03d}.pth"))
+        D_monet.load_state_dict(torch.load(path + f"/D_monet_Ep{epoch:03d}.pth"))
+        D_photo.load_state_dict(torch.load(path + f"/D_photo_Ep{epoch:03d}.pth"))
         G_photo.eval()
         G_monet .eval()
         D_monet.eval()
@@ -33,7 +33,8 @@ def load_models(path=None):
 
 def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_dl):
     n = min(len(photo_dl), len(monet_dl))
-    gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
+    #gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
+    gan_loss = torch.nn.MSELoss()
     cycle_loss = torch.nn.L1Loss()
     # Create iterator
     monet_iterator = iter(monet_dl)
@@ -150,18 +151,27 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
             writer.add_image('reconstructed_photo', reconstructed_photo_grid)
             writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
-def test_one_epoch(G_monet, epoch):
-    im_ten = photo_dataset_test[0].unsqueeze(0).to(device)
+def test_one_epoch(G_monet, G_photo, epoch):
+    photo = photo_dataset_test[0].unsqueeze(0).to(device)
+    monet = monet_dataset_test[0].unsqueeze(0).to(device)
     with torch.no_grad():
-        new_im = G_monet(im_ten)
-        torchvision.utils.save_image(new_im.cpu(), f"{test_dir}/epoch{epoch:03d}.png")
+        fake_monet = G_monet(photo)
+        torchvision.utils.save_image(fake_monet.cpu(), f"{test_dir}/fake_monet-epoch{epoch:03d}.png")
+        fake_photo = G_photo(monet)
+        torchvision.utils.save_image(fake_photo.cpu(), f"{test_dir}/fake_photo-epoch{epoch:03d}.png")
+
+def save_models(epoch, G_photo, G_monet , D_photo, D_monet):
+    torch.save(G_photo.state_dict(), f"{models_dir}/G_photo_Ep{epoch:03d}.pth")
+    torch.save(G_monet.state_dict(), f"{models_dir}/G_monet_Ep{epoch:03d}.pth")
+    torch.save(D_monet.state_dict(), f"{models_dir}/D_monet_Ep{epoch:03d}.pth")
+    torch.save(D_photo.state_dict(), f"{models_dir}/D_photo_Ep{epoch:03d}.pth")
 
 #=============================
 # CHOICE OF HYPERPARAMETERS
 #=============================
 num_epochs = 400
 batch_size = 2
-lr = 0.001 #0.0002
+lr = 0.0002 #0.0002
 momentum = 0.1
 l = 10 # ratio CYCLE loss / GAN LOSS
 
@@ -172,9 +182,11 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 # Load dataset
 monet_path_train = "dataset/train/monet/"
 photo_path_train = "dataset/train/photos/"
+monet_path_test = "dataset/test/monet/"
 photo_path_test = "dataset/test/photos/"
 monet_dataset = ImageDataset(monet_path_train)
 photo_dataset = ImageDataset(photo_path_train)
+monet_dataset_test = ImageDataset(monet_path_test)
 photo_dataset_test = ImageDataset(photo_path_test)
 monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
                                                batch_size=batch_size,
@@ -188,7 +200,7 @@ photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
                                                )
 
 # Load model (if path is None create a new model
-G_photo, G_monet, D_monet, D_photo = load_models(path=None)
+G_photo, G_monet, D_monet, D_photo = load_models(path="runs/fit/20211101-071822/models", epoch=0)
 
 
 # Optimizer
@@ -211,7 +223,7 @@ os.mkdir(models_dir)
 os.mkdir(test_dir)
 
 
-test_one_epoch(G_monet, -1)
+test_one_epoch(G_monet, G_photo,  0)
 
 # Start tensorboard
 #type "tensorboard --logdir=runs" in terminal
@@ -221,12 +233,10 @@ writer = SummaryWriter(summary_dir)
 
 
 
-for epoch in tqdm(range(num_epochs)):
+for epoch in tqdm(range(1, num_epochs)):
     print("Epoch:", epoch)
-    torch.save(G_photo.state_dict(), models_dir + "/G_photo.pth")
-    torch.save(G_monet.state_dict(), models_dir + "/G_monet.pth")
-    torch.save(D_monet.state_dict(), models_dir + "/D_monet.pth")
-    torch.save(D_photo.state_dict(), models_dir + "/D_photo.pth")
+    if epoch%5==0:
+        save_models(epoch, G_photo, G_monet , D_photo, D_monet)
     train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dataloader, monet_dataloader)
-    test_one_epoch(G_photo, epoch)
+    test_one_epoch(G_monet, G_photo,  epoch)
 
