@@ -84,7 +84,7 @@ class Discriminator(Module):
         x = self.c3(x)
         x = self.c4(x)
         x = self.c5(x)
-        x = x.mean([2,3])
+        #x = x.mean([2,3]) #TODO loss for each patch
         return x
 
 #generator

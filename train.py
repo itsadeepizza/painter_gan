@@ -28,14 +28,36 @@ def load_models(path=None, epoch=None):
     return G_photo, G_monet , D_monet, D_photo
 
 
+def train_discriminators(D_photo, D_monet):
+    dloss_photo = torch.zeros(1).to(device)
+    dloss_monet = torch.zeros(1).to(device)
+    for real_photo, fake_photo, real_monet, fake_monet in zip(real_photos, fake_photos, real_monets, fake_monets):
+        # D_photo vs G_photo
+        dloss_photo_real = gan_loss(D_photo(real_photo), 1)
+        dloss_photo_fake = gan_loss(D_photo(fake_photo), 0)
+        # D_monet vs G
+        dloss_monet_real = gan_loss(D_monet(real_monet), 1)
+        dloss_monet_fake = gan_loss(D_monet(fake_monet), 0)
 
+
+        dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
+        dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
+        dloss_total = dloss_photo + dloss_monet
+
+        # Update backpropagation
+        dloss_total.backward()
+        opt_Dm.step()
+        opt_Dp.step()
+
+        # Drop discriminant gradient for this loss
+        opt_Dm.zero_grad()
+        opt_Dp.zero_grad()
+    return dloss_monet, dloss_photo
 
 
 def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_dl):
     n = min(len(photo_dl), len(monet_dl))
-    #gan_loss = torch.nn.BCEWithLogitsLoss() #torch.nn.MSELoss()
-    gan_loss = torch.nn.MSELoss()
-    cycle_loss = torch.nn.L1Loss()
+
     # Create iterator
     monet_iterator = iter(monet_dl)
     photo_iterator = iter(photo_dl)
@@ -62,27 +84,8 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
         reconstructed_photo = G_photo(fake_monet)
         reconstructed_monet = G_monet(fake_photo)
 
-        # =========================
-        # GAN loss discriminator
-        # ========================
-        # D_photo vs G_photo
-        dloss_photo_real = gan_loss(D_photo(photo), torch.ones(batch_size, 1).to(device))
-        dloss_photo_fake = gan_loss(D_photo(fake_photo.detach()), torch.zeros(batch_size, 1).to(device))
-        # D_monet vs G
-        dloss_monet_real = gan_loss(D_monet(monet), torch.ones(batch_size, 1).to(device))
-        dloss_monet_fake = gan_loss(D_monet(fake_monet.detach()), torch.zeros(batch_size, 1).to(device))
-        dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
-        dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
-        dloss_total = dloss_photo + dloss_monet
 
-        # Update backpropagation
-        dloss_total.backward()
-        opt_Dm.step()
-        opt_Dp.step()
 
-        # Drop discriminant gradient for this loss ???WHY?
-        opt_Dm.zero_grad()
-        opt_Dp.zero_grad()
 
         #========================
         # LOSS GENERATOR
@@ -94,8 +97,8 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
         cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
         # GAN loss generator
-        gloss_monet_fake = gan_loss(D_monet(fake_monet), torch.ones(batch_size,1).to(device))
-        floss_photo_fake = gan_loss(D_photo(fake_photo), torch.ones(batch_size,1).to(device))
+        gloss_monet_fake = gan_loss(D_monet(fake_monet), 1)
+        floss_photo_fake = gan_loss(D_photo(fake_photo), 1)
         gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
 
         generator_loss = l * cycle_losses + gan_generator_losses
@@ -105,7 +108,24 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
         opt_G_photo.step()
         opt_G_monet.step()
 
-        total_loss = generator_loss.item() + dloss_total.item()
+
+        # =========================
+        # GAN loss discriminator
+        # ========================
+        if len(real_photos) >= 5:
+            del real_photos[0]
+            del fake_photos[0]
+            del real_monets[0]
+            del fake_monets[0]
+        real_photos.append(photo)
+        fake_photos.append(fake_photo.detach())
+        real_monets.append(monet)
+        fake_monets.append(fake_monet.detach())
+        opt_Dm.zero_grad()
+        opt_Dp.zero_grad()
+        dloss_monet, dloss_photo = train_discriminators(D_photo, D_monet)
+
+        total_loss = generator_loss.item() +  dloss_monet.item()+  dloss_photo.item()
         print("total loss is ", total_loss)
         #print("cycle loss is ", cycle_losses.item())
         #print("d photo loss is ", dloss_photo.item())
@@ -170,10 +190,26 @@ def save_models(epoch, G_photo, G_monet , D_photo, D_monet):
 # CHOICE OF HYPERPARAMETERS
 #=============================
 num_epochs = 400
-batch_size = 2
-lr = 0.0002 #0.0002
-momentum = 0.1
+batch_size = 1
+lr = 0.0001 #0.0002
+momentum = 0.9
 l = 10 # ratio CYCLE loss / GAN LOSS
+
+# LOSSES
+
+def gan_loss(test, label):
+    import torch.nn.functional as F
+    if label==1:
+        label = torch.ones(test.shape, device=device)
+    else:
+        label = torch.zeros(test.shape, device=device)
+    loss = F.binary_cross_entropy_with_logits(test, label)
+    return loss
+
+
+
+#gan_loss = torch.nn.MSELoss()
+cycle_loss = torch.nn.L1Loss()
 
 
 # Choose device
@@ -204,21 +240,22 @@ G_photo, G_monet, D_monet, D_photo = load_models(path="runs/fit/20211101-071822/
 
 
 # Optimizer
-opt_G_photo = torch.optim.SGD(lr=lr, params=G_photo.parameters(), momentum=momentum)
-opt_G_monet = torch.optim.SGD(lr=lr, params=G_monet.parameters(), momentum=momentum)
-opt_Dm = torch.optim.SGD(lr=lr, params=D_monet.parameters(), momentum=momentum)
-opt_Dp = torch.optim.SGD(lr=lr, params=D_photo.parameters(), momentum=momentum)
+opt_G_photo = torch.optim.Adam(lr=lr, params=G_photo.parameters())
+opt_G_monet = torch.optim.Adam(lr=lr, params=G_monet.parameters())
+opt_Dm = torch.optim.Adam(lr=lr, params=D_monet.parameters())
+opt_Dp = torch.optim.Adam(lr=lr, params=D_photo.parameters())
 
 photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
 monet_sampler = torch.utils.data.RandomSampler(monet_dataset, replacement=False)
 
 # Create directories for logs
-log_dir = "runs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-summary_dir = log_dir + "/summary"
+now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = "runs/fit/" + now_str
+summary_dir = "runs/fit/" + now_str
 models_dir = log_dir + "/models"
 test_dir = log_dir + "/test"
 os.mkdir(log_dir)
-os.mkdir(summary_dir)
+#os.mkdir(summary_dir)
 os.mkdir(models_dir)
 os.mkdir(test_dir)
 
@@ -227,10 +264,15 @@ test_one_epoch(G_monet, G_photo,  0)
 
 # Start tensorboard
 #type "tensorboard --logdir=runs" in terminal
+#type "tensorboard dev upload --logdir=runs/fit/NAME_DIRECTORY" for upload the log (no images)
+
 writer = SummaryWriter(summary_dir)
 
 
-
+real_photos = []
+fake_photos = []
+real_monets = []
+fake_monets = []
 
 
 for epoch in tqdm(range(1, num_epochs)):
