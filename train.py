@@ -42,7 +42,7 @@ def train_discriminators(D_photo, D_monet):
 
         dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
         dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
-        dloss_total = dloss_photo + dloss_monet
+        dloss_total = (dloss_photo + dloss_monet)/10
 
         # Update backpropagation
         dloss_total.backward()
@@ -96,6 +96,10 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
         cycleloss_G_monetG_photo = cycle_loss(monet, reconstructed_monet)
         cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
+        # no need of gradients for discriminant
+        D_monet.requires_grad = False
+        D_photo.requires_grad = False
+
         # GAN loss generator
         gloss_monet_fake = gan_loss(D_monet(fake_monet), 1)
         floss_photo_fake = gan_loss(D_photo(fake_photo), 1)
@@ -103,6 +107,10 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
 
         generator_loss = l * cycle_losses + gan_generator_losses
         generator_loss.backward()
+
+        # Now we need gradients for discriminant
+        D_monet.requires_grad = True
+        D_photo.requires_grad = True
 
         # Update backpropagation for generators
         opt_G_photo.step()
@@ -170,6 +178,8 @@ def train_one_epoch(epoch, G_photo, G_monet , D_photo, D_monet, photo_dl, monet_
             writer.add_image('fake_photo', fake_photo_grid)
             writer.add_image('reconstructed_photo', reconstructed_photo_grid)
             writer.add_image('reconstructed_monet', reconstructed_monet_grid)
+        # Free memory
+        torch.cuda.empty_cache()
 
 def test_one_epoch(G_monet, G_photo, epoch):
     photo = photo_dataset_test[0].unsqueeze(0).to(device)
