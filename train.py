@@ -57,16 +57,17 @@ class Trainer:
     def train_discriminators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet):
         enable_grad([self.G_photo, self.G_monet], False)
         enable_grad([self.D_photo, self.D_monet], True)
-        self.opt_Dm.zero_grad()
+
         # D_photo vs G_photo
+        self.opt_Dp.zero_grad()
         dloss_photo_real = gan_loss(self.D_photo(real_photo), 1)
         dloss_photo_fake = gan_loss(self.D_photo(fake_photo.detach()), 0)
         dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
         dloss_photo.backward()
         self.opt_Dp.step()
 
-        self.opt_Dp.zero_grad()
-        # D_monet vs G
+        # D_monet vs G_monet
+        self.opt_Dm.zero_grad()
         dloss_monet_real = gan_loss(self.D_monet(real_monet), 1)
         dloss_monet_fake = gan_loss(self.D_monet(fake_monet.detach()), 0)
 
@@ -124,7 +125,7 @@ class Trainer:
         self.G_photo.train()
         self.G_monet.train()
         self.D_photo.train()
-        self.G_monet.train()
+        self.D_monet.train()
 
         n = min(len(photo_dl), len(monet_dl))
 
