@@ -5,6 +5,7 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import itertools
 import glob, os
+import numpy as np
 
 class ImageDataset(Dataset):
     """ Dataloader for Monet paintings AND photos"""
@@ -30,10 +31,12 @@ class ImageDataset(Dataset):
         return img
 
     # The first one is applied first
+    crop = np.random.randint(210, 256)
+    crop = 128
     transform = transforms.Compose([
         transforms.ToPILImage(),
-        transforms.RandomCrop(224),
-        transforms.Resize(256),
+        transforms.RandomCrop(crop),
+        #transforms.Resize(256),
 
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor()

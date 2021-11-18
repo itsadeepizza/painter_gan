@@ -1,13 +1,14 @@
 import torchvision
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from model.cyclegan import Generator, Discriminator
+
+from model.mini_cyclegan import Generator, Discriminator
 from loader import ImageDataset
 from tqdm import tqdm
 import random
 import datetime
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 import numpy as np
 
 
@@ -17,7 +18,9 @@ def gan_loss(test, label):
         label = torch.ones(test.shape, device=device)
     else:
         label = torch.zeros(test.shape, device=device)
-    loss = F.binary_cross_entropy_with_logits(test, label)
+    #loss = F.binary_cross_entropy_with_logits(test, label)
+    loss = F.mse_loss(test, label)
+    #loss = F.l1_loss(test, label)
     return loss
 
 
@@ -37,6 +40,7 @@ class Trainer:
         self.D_monet = Discriminator().to(device)  # 1=real, 0=fake
         self.D_photo = Discriminator().to(device)
         if path is not None:
+            #
             self.G_photo.load_state_dict(torch.load(path + f"/G_photo_Ep{epoch:03d}.pth"))
             self.G_monet.load_state_dict(torch.load(path + f"/G_monet_Ep{epoch:03d}.pth"))
             self.D_monet.load_state_dict(torch.load(path + f"/D_monet_Ep{epoch:03d}.pth"))
@@ -54,6 +58,8 @@ class Trainer:
 
         self.writer = SummaryWriter(summary_dir)
 
+
+
     def train_discriminators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet):
         enable_grad([self.G_photo, self.G_monet], False)
         enable_grad([self.D_photo, self.D_monet], True)
@@ -70,10 +76,8 @@ class Trainer:
         self.opt_Dm.zero_grad()
         dloss_monet_real = gan_loss(self.D_monet(real_monet), 1)
         dloss_monet_fake = gan_loss(self.D_monet(fake_monet.detach()), 0)
-
         dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
         dloss_monet.backward()
-
         self.opt_Dm.step()
 
         self.writer.add_scalar("d_photo loss",
@@ -111,6 +115,8 @@ class Trainer:
         self.opt_G_photo.step()
         self.opt_G_monet.step()
 
+
+
         self.writer.add_scalar("cycle loss",
                           cycle_losses.item(),
                           iter)
@@ -147,35 +153,37 @@ class Trainer:
             fake_monet = self.G_monet(photo)
             fake_photo = self.G_photo(monet)
 
-            self.train_discriminators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
             self.train_generators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
+            self.train_discriminators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
+
 
             #Upload losses to Tensorboard
-            '''
-            
-            
-            
-            
-    
+
+            if i == 0:
+                # summary models
+                pass
+                #self.writer.add_graph(self.G_photo, monet)
     
             # Upload images to tensorboard
             if i%3 == 0:
+
+
                 # create grid of images
                 monet_grid = torchvision.utils.make_grid(monet.cpu())
                 photo_grid = torchvision.utils.make_grid(photo.cpu())
                 fake_monet_grid = torchvision.utils.make_grid(fake_monet.cpu())
                 fake_photo_grid = torchvision.utils.make_grid(fake_photo.cpu())
-                reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
-                reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
+                #reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
+                #reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
     
                 # write to tensorboard
-                writer.add_image("photo", photo_grid)
-                writer.add_image('fake_monet', fake_monet_grid)
-                writer.add_image("monet", monet_grid)
-                writer.add_image('fake_photo', fake_photo_grid)
-                writer.add_image('reconstructed_photo', reconstructed_photo_grid)
-                writer.add_image('reconstructed_monet', reconstructed_monet_grid)
-            '''
+                self.writer.add_image("photo", photo_grid)
+                self.writer.add_image('fake_monet', fake_monet_grid)
+                self.writer.add_image("monet", monet_grid)
+                self.writer.add_image('fake_photo', fake_photo_grid)
+                #writer.add_image('reconstructed_photo', reconstructed_photo_grid)
+                #writer.add_image('reconstructed_monet', reconstructed_monet_grid)
+
 
     def test_one_epoch(self, epoch):
         self.G_photo.eval()
@@ -226,16 +234,19 @@ class Trainer:
 # CHOICE OF HYPERPARAMETERS
 #=============================
 num_epochs = 400
-batch_size = 6
-lr = 0.0001 #0.0002
+batch_size = 9
+lr = 0.0002 #0.0002
 momentum = 0.9
-l = 10 # ratio CYCLE loss / GAN LOSS
+l = 2 # ratio CYCLE loss / GAN LOSS
 
 
 
 
 # Choose device
+# uncomment below
+#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+print("Device used: ", device)
 # Dataset: https://www.kaggle.com/c/gan-getting-started/data
 # Load dataset
 monet_path_train = "dataset/train/monet/"
@@ -268,7 +279,7 @@ monet_sampler = torch.utils.data.RandomSampler(monet_dataset, replacement=False)
 # Create directories for logs
 now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 log_dir = "runs/fit/" + now_str
-summary_dir = "runs/fit/" + now_str
+summary_dir = log_dir + "/summary"
 models_dir = log_dir + "/models"
 test_dir = log_dir + "/test"
 os.makedirs(log_dir, exist_ok=True)
@@ -276,7 +287,7 @@ os.makedirs(log_dir, exist_ok=True)
 os.makedirs(models_dir, exist_ok=True)
 os.makedirs(test_dir, exist_ok=True)
 
-trainer = Trainer(summary_dir, path=path)
+trainer = Trainer(summary_dir, path=path, epoch=15)
 
 trainer.run()
 

@@ -36,9 +36,7 @@ class Generator(Module):
         self.r4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
         self.r5 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
         self.r6 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r7 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r8 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r9 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+
 
         self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=0) #u128
         self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=0)  # u64
@@ -57,14 +55,13 @@ class Generator(Module):
         x = x + self.r4(x)
         x = x + self.r5(x)
         x = x + self.r6(x)
-        x = x + self.r7(x)
-        x = x + self.r8(x)
-        x = x + self.r9(x)
+
 
         x = self.u1(x)
         x = self.u2(x)
         x = torch.nn.functional.pad(x, (0, 1, 0, 1), mode='replicate')
         x = self.c4(x)
+        x = torch.sigmoid(x)
         return x
 
 
