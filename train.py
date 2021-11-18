@@ -8,6 +8,7 @@ from tqdm import tqdm
 import random
 import datetime
 import os
+from icecream import ic
 
 import numpy as np
 
@@ -25,12 +26,15 @@ def gan_loss(test, label):
 
 
 cycle_loss = torch.nn.L1Loss()
-
+identity_loss = torch.nn.MSELoss()
 
 def enable_grad(models, enable):
     for model in models:
         for param in model.parameters():
             param.requires_grad = enable
+
+def to_01(img):
+    return (img + 1) / 2
 
 class Trainer:
     def __init__(self, summary_dir, path=None, epoch=None):
@@ -88,7 +92,7 @@ class Trainer:
                           dloss_monet.item(),
                           iter)
 
-    def train_generators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet):
+    def train_generators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet, dumb=False):
         enable_grad([self.G_photo, self.G_monet], True)
         enable_grad([self.D_photo, self.D_monet], False)
         # generate cycles
@@ -97,18 +101,34 @@ class Trainer:
 
         self.opt_G_photo.zero_grad()
         self.opt_G_monet.zero_grad()
-        # Cycle loss
-        cycleloss_G_photoG_monet = cycle_loss(real_photo, reconstructed_photo)
-        cycleloss_G_monetG_photo = cycle_loss(real_monet, reconstructed_monet)
-        cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
+        #ic("before", fake_photo.requires_grad)
+        # generate fakes again
+        #fake_monet = self.G_monet(real_photo)
+        #fake_photo = self.G_photo(real_monet)
+        #ic("after", fake_photo.requires_grad)
 
-        # GAN loss generator
+        #Identity loss
+        id_loss_G_photo = identity_loss(real_monet, fake_photo)
+        id_loss_G_monet = identity_loss(real_photo, fake_monet)
+        id_loss = (id_loss_G_photo + id_loss_G_monet).sum()
+        #print(id_loss.requires_grad)
 
-        gloss_monet_fake = gan_loss(self.D_monet(fake_monet), 1)
-        floss_photo_fake = gan_loss(self.D_photo(fake_photo), 1)
-        gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
+        if not dumb:
+            # Cycle loss
+            cycleloss_G_photoG_monet = cycle_loss(real_photo, reconstructed_photo)
+            cycleloss_G_monetG_photo = cycle_loss(real_monet, reconstructed_monet)
+            cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
-        generator_loss = l * cycle_losses + gan_generator_losses
+            # GAN loss generator
+
+            gloss_monet_fake = gan_loss(self.D_monet(fake_monet), 1)
+            floss_photo_fake = gan_loss(self.D_photo(fake_photo), 1)
+            gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
+
+            generator_loss = l * cycle_losses + gan_generator_losses + m * id_loss
+        else:
+            generator_loss = m * id_loss
+
         generator_loss.backward()
 
         # Update backpropagation for generators
@@ -146,6 +166,9 @@ class Trainer:
             photo = photo.to(device)
             monet = monet.to(device)
 
+            enable_grad([self.G_photo, self.G_monet], True)
+            enable_grad([self.D_photo, self.D_monet], True)
+
             #=============================
             # IMAGE GENERATION
             #=============================
@@ -165,22 +188,17 @@ class Trainer:
                 #self.writer.add_graph(self.G_photo, monet)
     
             # Upload images to tensorboard
-            if i%3 == 0:
+            if i%7 == 0:
 
 
                 # create grid of images
-                monet_grid = torchvision.utils.make_grid(monet.cpu())
-                photo_grid = torchvision.utils.make_grid(photo.cpu())
-                fake_monet_grid = torchvision.utils.make_grid(fake_monet.cpu())
-                fake_photo_grid = torchvision.utils.make_grid(fake_photo.cpu())
+
                 #reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
                 #reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
     
                 # write to tensorboard
-                self.writer.add_image("photo", photo_grid)
-                self.writer.add_image('fake_monet', fake_monet_grid)
-                self.writer.add_image("monet", monet_grid)
-                self.writer.add_image('fake_photo', fake_photo_grid)
+                self.writer.add_image("[train] photo", all_grid, iteration)
+
                 #writer.add_image('reconstructed_photo', reconstructed_photo_grid)
                 #writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
@@ -229,71 +247,72 @@ class Trainer:
             if epoch % 5 == 0:
                 self.save_models(epoch)
 
-
-#=============================
-# CHOICE OF HYPERPARAMETERS
-#=============================
-num_epochs = 400
-batch_size = 9
-lr = 0.0002 #0.0002
-momentum = 0.9
-l = 2 # ratio CYCLE loss / GAN LOSS
-
-
-
-
-# Choose device
-# uncomment below
-#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-print("Device used: ", device)
-# Dataset: https://www.kaggle.com/c/gan-getting-started/data
-# Load dataset
-monet_path_train = "dataset/train/monet/"
-photo_path_train = "dataset/train/photos/"
-monet_path_test = "dataset/test/monet/"
-photo_path_test = "dataset/test/photos/"
-monet_dataset = ImageDataset(monet_path_train)
-photo_dataset = ImageDataset(photo_path_train)
-monet_dataset_test = ImageDataset(monet_path_test)
-photo_dataset_test = ImageDataset(photo_path_test)
-monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
-                                               batch_size=batch_size,
-                                               shuffle=True,
-                                               num_workers=0
-                                               )
-photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
-                                               batch_size=batch_size,
-                                               shuffle=True,
-                                               num_workers=0
-                                               )
-
-# Load model (if path is None create a new model
-# path = "runs/fit/20211101-071822/models"
-path = None
+# For using multi-threads in Windows
+if __name__=="__main__":
+    #=============================
+    # CHOICE OF HYPERPARAMETERS
+    #=============================
+    num_epochs = 400
+    batch_size = 8
+    lr = 0.0002 #0.0002
+    momentum = 0.9
+    l = 10 # ratio CYCLE loss / GAN LOSS
+    m = l * 0.5
 
 
-photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
-monet_sampler = torch.utils.data.RandomSampler(monet_dataset, replacement=False)
 
-# Create directories for logs
-now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-log_dir = "runs/fit/" + now_str
-summary_dir = log_dir + "/summary"
-models_dir = log_dir + "/models"
-test_dir = log_dir + "/test"
-os.makedirs(log_dir, exist_ok=True)
-#os.mkdir(summary_dir)
-os.makedirs(models_dir, exist_ok=True)
-os.makedirs(test_dir, exist_ok=True)
+    # Choose device
+    # uncomment below
+    #os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    print("Device used: ", device)
+    # Dataset: https://www.kaggle.com/c/gan-getting-started/data
+    # Load dataset
+    monet_path_train = "dataset/train/monet/"
+    photo_path_train = "dataset/train/photos/"
+    monet_path_test = "dataset/test/monet/"
+    photo_path_test = "dataset/test/photos/"
+    monet_dataset = ImageDataset(monet_path_train)
+    photo_dataset = ImageDataset(photo_path_train)
+    monet_dataset_test = ImageDataset(monet_path_test)
+    photo_dataset_test = ImageDataset(photo_path_test)
+    monet_dataloader = torch.utils.data.DataLoader(monet_dataset,
+                                                   batch_size=batch_size,
+                                                   shuffle=True,
+                                                   num_workers=6
+                                                   )
+    photo_dataloader = torch.utils.data.DataLoader(photo_dataset,
+                                                   batch_size=batch_size,
+                                                   shuffle=True,
+                                                   num_workers=6
+                                                   )
 
-trainer = Trainer(summary_dir, path=path, epoch=15)
+    # Load model (if path is None create a new model
+    # path = "runs/fit/20211101-071822/models"
+    path = None
 
-trainer.run()
 
-# Start tensorboard
-#type "tensorboard --logdir=runs" in terminal
-#type "tensorboard dev upload --logdir=runs/fit/NAME_DIRECTORY" for upload the log (no images)
+    photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
+    monet_sampler = torch.utils.data.RandomSampler(monet_dataset, replacement=False)
+
+    # Create directories for logs
+    now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = "runs/fit/" + now_str
+    summary_dir = log_dir + "/summary"
+    models_dir = log_dir + "/models"
+    test_dir = log_dir + "/test"
+    os.makedirs(log_dir, exist_ok=True)
+    #os.mkdir(summary_dir)
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
+
+    trainer = Trainer(summary_dir, path=path, epoch=15)
+
+    trainer.run()
+
+    # Start tensorboard
+    #type "tensorboard --logdir=runs" in terminal
+    #type "tensorboard dev upload --logdir=runs/fit/NAME_DIRECTORY" for upload the log (no images)
 
 
 

@@ -61,7 +61,7 @@ class Generator(Module):
         x = self.u2(x)
         x = torch.nn.functional.pad(x, (0, 1, 0, 1), mode='replicate')
         x = self.c4(x)
-        x = torch.sigmoid(x)
+        x = torch.tanh(x)
         return x
 
 
