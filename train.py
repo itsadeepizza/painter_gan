@@ -34,6 +34,7 @@ def enable_grad(models, enable):
             param.requires_grad = enable
 
 def to_01(img):
+    return img
     return (img + 1) / 2
 
 class Trainer:

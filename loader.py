@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import itertools
 import glob, os
 import numpy as np
+from icecream import ic
 
 class ImageDataset(Dataset):
     """ Dataloader for Monet paintings AND photos"""

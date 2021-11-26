@@ -9,9 +9,9 @@ class ConvInstNormRelu(torch.nn.Sequential):
         torch.nn.InstanceNorm2d(num_features=out_channels), torch.nn.ReLU())
 
 class TransposeConvInstNormRelu(torch.nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
+    def __init__(self, in_channels, out_channels, *args, **keyargs):
         """`kernel_size` x `kernel_size` Convolution-Transpose-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
-        super(TransposeConvInstNormRelu, self).__init__(torch.nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+        super(TransposeConvInstNormRelu, self).__init__(torch.nn.ConvTranspose2d( in_channels, out_channels, *args, **keyargs),
         torch.nn.InstanceNorm2d(out_channels), torch.nn.ReLU())
 
 class ConvInstNormLeakyRelu(torch.nn.Sequential):
@@ -38,10 +38,10 @@ class Generator(Module):
         self.r6 = ConvInstNormLeakyRelu(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
 
 
-        self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=0) #u128
-        self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=0)  # u64
+        self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=1, output_padding=1) #u128
+        self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1)  # u64
 
-        self.c4 = ConvInstNormRelu(in_channels=64, out_channels=3, kernel_size=7, stride=1, padding=1)  # c7s1-3
+        self.c4 = ConvInstNormRelu(in_channels=64, out_channels=3, kernel_size=7, stride=1, padding=3)  # c7s1-3
 
 
     def forward(self, x):
