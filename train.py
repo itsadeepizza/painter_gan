@@ -26,7 +26,7 @@ def gan_loss(test, label):
 
 
 cycle_loss = torch.nn.L1Loss()
-identity_loss = torch.nn.MSELoss()
+identity_loss = torch.nn.L1Loss()
 
 def enable_grad(models, enable):
     for model in models:
@@ -253,7 +253,7 @@ if __name__=="__main__":
     #=============================
     # CHOICE OF HYPERPARAMETERS
     #=============================
-    num_epochs = 400
+    num_epochs = 4000
     batch_size = 8
     lr = 0.0002 #0.0002
     momentum = 0.9
@@ -290,7 +290,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = None
+    path = "runs/fit/20211127-173854/models"
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -307,7 +307,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=15)
+    trainer = Trainer(summary_dir, path=path, epoch=265)
 
     trainer.run()
 
