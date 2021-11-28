@@ -7,7 +7,7 @@ class ConvInstNormSigm(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
         super(ConvInstNormSigm, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
-        torch.nn.InstanceNorm2d(num_features=out_channels), torch.nn.Tanh())
+        torch.nn.Sigmoid())
 
 class ConvInstNormRelu(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
@@ -68,7 +68,7 @@ class Generator(Module):
         x = self.u2(x)
         x = torch.nn.functional.pad(x, (0, 1, 0, 1), mode='replicate')
         x = self.c4(x)
-        x = torch.sigmoid(x)
+        #x = torch.sigmoid(x)
         return x
 
 

@@ -1,7 +1,7 @@
 import torchvision
 import torch
 from torch.utils.tensorboard import SummaryWriter
-
+from utils import plot_color_curve, plot_to_image
 from model.mini_cyclegan import Generator, Discriminator
 from loader import ImageDataset
 from tqdm import tqdm
@@ -9,7 +9,7 @@ import random
 import datetime
 import os
 from icecream import ic
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -183,13 +183,25 @@ class Trainer:
 
             #Upload losses to Tensorboard
 
-            if i == 0:
-                # summary models
-                pass
-                #self.writer.add_graph(self.G_photo, monet)
+
     
             # Upload images to tensorboard
             if i%7 == 0:
+
+                monet_cpu = monet.detach().cpu()
+                photo_cpu = photo.detach().cpu()
+                fake_photo_cpu = fake_photo.detach().cpu()
+                fake_monet_cpu = fake_monet.detach().cpu()
+
+                fig_monet, ax = plt.subplots(1, 1)
+                plot_color_curve(ax, monet_cpu[0], label="monet", c="r")
+                plot_color_curve(ax, fake_photo_cpu[0], label="fake_photo", c="r", linestyle='--')
+                plot_color_curve(ax, photo_cpu[0], label="photo", c="blue")
+                plot_color_curve(ax, fake_monet_cpu[0], label="fake_monet", c="blue", linestyle='--')
+                ax.legend()
+                plot_tb = plot_to_image(fig_monet)
+
+
 
 
                 # create grid of images
@@ -199,6 +211,7 @@ class Trainer:
     
                 # write to tensorboard
                 self.writer.add_image("[train] photo", all_grid, iteration)
+                self.writer.add_image("Color curves", plot_tb, iteration)
 
                 #writer.add_image('reconstructed_photo', reconstructed_photo_grid)
                 #writer.add_image('reconstructed_monet', reconstructed_monet_grid)
@@ -218,10 +231,15 @@ class Trainer:
             reconstructed_photo = self.G_photo(fake_monet)
             reconstructed_monet = self.G_monet(fake_photo)
 
-            monet_grid = torchvision.utils.make_grid(monet.cpu())
-            photo_grid = torchvision.utils.make_grid(photo.cpu())
-            fake_monet_grid = torchvision.utils.make_grid(fake_monet.cpu())
-            fake_photo_grid = torchvision.utils.make_grid(fake_photo.cpu())
+            monet_cpu = monet.detach().cpu()
+            fake_photo_cpu = fake_photo.detach().cpu()
+
+
+
+            monet_grid = torchvision.utils.make_grid(monet_cpu)
+            photo_grid = torchvision.utils.make_grid(photo.detach().cpu())
+            fake_monet_grid = torchvision.utils.make_grid(fake_monet.detach().cpu())
+            fake_photo_grid = torchvision.utils.make_grid(fake_photo_cpu)
             reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
             reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
 
@@ -257,7 +275,7 @@ if __name__=="__main__":
     batch_size = 8
     lr = 0.0002 #0.0002
     momentum = 0.9
-    l = 10 # ratio CYCLE loss / GAN LOSS
+    l = 2 # ratio CYCLE loss / GAN LOSS
     m = l * 0.5
 
 
@@ -290,7 +308,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = "runs/fit/20211127-173854/models"
+    path = None
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -307,7 +325,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=265)
+    trainer = Trainer(summary_dir, path=path, epoch=340)
 
     trainer.run()
 
