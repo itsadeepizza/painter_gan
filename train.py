@@ -63,34 +63,44 @@ class Trainer:
 
         self.writer = SummaryWriter(summary_dir)
 
+        #initialise discriminators batch
+        self.real_photos = []
+        self.fake_photos = []
+        self.real_monets = []
+        self.fake_monets = []
 
 
-    def train_discriminators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet):
-        enable_grad([self.G_photo, self.G_monet], False)
+
+    def train_discriminators(self, epoch, iter):
+
         enable_grad([self.D_photo, self.D_monet], True)
-
-        # D_photo vs G_photo
+        dloss_photo = torch.zeros(1).to(device)
+        dloss_monet = torch.zeros(1).to(device)
         self.opt_Dp.zero_grad()
-        dloss_photo_real = gan_loss(self.D_photo(real_photo), 1)
-        dloss_photo_fake = gan_loss(self.D_photo(fake_photo.detach()), 0)
-        dloss_photo = (dloss_photo_real + dloss_photo_fake).sum()
-        dloss_photo.backward()
-        self.opt_Dp.step()
-
-        # D_monet vs G_monet
         self.opt_Dm.zero_grad()
-        dloss_monet_real = gan_loss(self.D_monet(real_monet), 1)
-        dloss_monet_fake = gan_loss(self.D_monet(fake_monet.detach()), 0)
-        dloss_monet = (dloss_monet_real + dloss_monet_fake).sum()
+        for real_photo, fake_photo, real_monet, fake_monet in zip(self.real_photos, self.fake_photos, self.real_monets, self.fake_monets):
+            # D_photo vs G_photo
+            dloss_photo_real = gan_loss(self.D_photo(real_photo), 1)
+            dloss_photo_fake = gan_loss(self.D_photo(fake_photo), 0)
+            dloss_photo += (dloss_photo_real + dloss_photo_fake).sum()
+
+            # D_monet vs G_monet
+            dloss_monet_real = gan_loss(self.D_monet(real_monet), 1)
+            dloss_monet_fake = gan_loss(self.D_monet(fake_monet), 0)
+            dloss_monet += (dloss_monet_real + dloss_monet_fake).sum()
+        # update model
+        dloss_photo.backward()
         dloss_monet.backward()
+        self.opt_Dp.step()
         self.opt_Dm.step()
 
+        # report loss to tensorboard
         self.writer.add_scalar("d_photo loss",
-                          dloss_photo.item(),
+                          dloss_photo.item()/len(real_photo),
                           iter)
 
         self.writer.add_scalar("d_monet loss",
-                          dloss_monet.item(),
+                          dloss_monet.item()/len(real_photo),
                           iter)
 
     def train_generators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet, dumb=False):
