@@ -34,6 +34,7 @@ def enable_grad(models, enable):
             param.requires_grad = enable
 
 def to_01(img):
+    """COnvert image with pixels in range [-1,1] to [0,1]"""
     return img
     return (img + 1) / 2
 
@@ -96,44 +97,46 @@ class Trainer:
 
         # report loss to tensorboard
         self.writer.add_scalar("d_photo loss",
-                          dloss_photo.item()/len(real_photo),
+                          dloss_photo.item()/len(self.real_photos),
                           iter)
 
         self.writer.add_scalar("d_monet loss",
-                          dloss_monet.item()/len(real_photo),
+                          dloss_monet.item()/len(self.real_photos),
                           iter)
 
-    def train_generators(self, epoch, iter, real_photo, fake_photo, real_monet, fake_monet, dumb=False):
+    def train_generators(self, dumb=False):
         enable_grad([self.G_photo, self.G_monet], True)
         enable_grad([self.D_photo, self.D_monet], False)
-        # generate cycles
-        reconstructed_photo = self.G_photo(fake_monet)
-        reconstructed_monet = self.G_monet(fake_photo)
 
         self.opt_G_photo.zero_grad()
         self.opt_G_monet.zero_grad()
+
+        # generate fakes
+        self.fake_monet = self.G_monet(self.photo)
+        self.fake_photo = self.G_photo(self.monet)
+        # generate cycles
+        reconstructed_photo = self.G_photo(self.fake_monet)
+        reconstructed_monet = self.G_monet(self.fake_photo)
+
         #ic("before", fake_photo.requires_grad)
-        # generate fakes again
-        #fake_monet = self.G_monet(real_photo)
-        #fake_photo = self.G_photo(real_monet)
         #ic("after", fake_photo.requires_grad)
 
         #Identity loss
-        id_loss_G_photo = identity_loss(real_monet, fake_photo)
-        id_loss_G_monet = identity_loss(real_photo, fake_monet)
+        id_loss_G_photo = identity_loss(self.monet, self.fake_photo)
+        id_loss_G_monet = identity_loss(self.photo, self.fake_monet)
         id_loss = (id_loss_G_photo + id_loss_G_monet).sum()
         #print(id_loss.requires_grad)
 
         if not dumb:
             # Cycle loss
-            cycleloss_G_photoG_monet = cycle_loss(real_photo, reconstructed_photo)
-            cycleloss_G_monetG_photo = cycle_loss(real_monet, reconstructed_monet)
+            cycleloss_G_photoG_monet = cycle_loss(self.photo, reconstructed_photo)
+            cycleloss_G_monetG_photo = cycle_loss(self.monet, reconstructed_monet)
             cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
             # GAN loss generator
 
-            gloss_monet_fake = gan_loss(self.D_monet(fake_monet), 1)
-            floss_photo_fake = gan_loss(self.D_photo(fake_photo), 1)
+            gloss_monet_fake = gan_loss(self.D_monet(self.fake_monet), 1)
+            floss_photo_fake = gan_loss(self.D_photo(self.fake_photo), 1)
             gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
 
             generator_loss = l * cycle_losses + gan_generator_losses + m * id_loss
@@ -171,61 +174,86 @@ class Trainer:
         photo_iterator = iter(photo_dl)
         for i in tqdm(range(n)):
             # iterate through the dataloader
-            photo = next(photo_iterator)
-            monet = next(monet_iterator)
+            self.photo = next(photo_iterator)
+            self.monet = next(monet_iterator)
             # Load to GPU
-            photo = photo.to(device)
-            monet = monet.to(device)
+            self.photo = self.photo.to(device)
+            self.monet = self.monet.to(device)
 
+            # Enable all grads
             enable_grad([self.G_photo, self.G_monet], True)
             enable_grad([self.D_photo, self.D_monet], True)
 
             #=============================
             # IMAGE GENERATION
             #=============================
-            # generate fakes
-            fake_monet = self.G_monet(photo)
-            fake_photo = self.G_photo(monet)
+
+            self.iteration = epoch * n + i
+
+            self.train_generators()
+
+            #=========================================
+            # Add last images to discriminator batch
+            #=======================================
+
+            # update rolling discriminator batch
+            self.update_discriminator_batch()
 
             self.train_generators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
             self.train_discriminators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
 
 
-            #Upload losses to Tensorboard
-
-
-    
             # Upload images to tensorboard
             if i%7 == 0:
-
-                monet_cpu = monet.detach().cpu()
-                photo_cpu = photo.detach().cpu()
-                fake_photo_cpu = fake_photo.detach().cpu()
-                fake_monet_cpu = fake_monet.detach().cpu()
-
-                fig_monet, ax = plt.subplots(1, 1)
-                plot_color_curve(ax, monet_cpu[0], label="monet", c="r")
-                plot_color_curve(ax, fake_photo_cpu[0], label="fake_photo", c="r", linestyle='--')
-                plot_color_curve(ax, photo_cpu[0], label="photo", c="blue")
-                plot_color_curve(ax, fake_monet_cpu[0], label="fake_monet", c="blue", linestyle='--')
-                ax.legend()
-                plot_tb = plot_to_image(fig_monet)
+                self.update_images_tensorboard()
 
 
+    def update_discriminator_batch(self):
 
+        if len(self.real_photos) >= n_batch_disc:
+            self.real_photos.pop()
+            self.fake_photos.pop()
+            self.real_monets.pop()
+            self.fake_monets.pop()
 
-                # create grid of images
+        self.real_photos.append(self.photo)
+        self.fake_photos.append(self.fake_photo.detach())
+        self.real_monets.append(self.monet)
+        self.fake_monets.append(self.fake_monet.detach())
 
-                #reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
-                #reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
-    
-                # write to tensorboard
-                self.writer.add_image("[train] photo", all_grid, iteration)
-                self.writer.add_image("Color curves", plot_tb, iteration)
+    def update_images_tensorboard(self):
+        # Detach images
+        monet_cpu = self.monet.detach().cpu()
+        photo_cpu = self.photo.detach().cpu()
+        fake_photo_cpu = self.fake_photo.detach().cpu()
+        fake_monet_cpu = self.fake_monet.detach().cpu()
 
-                #writer.add_image('reconstructed_photo', reconstructed_photo_grid)
-                #writer.add_image('reconstructed_monet', reconstructed_monet_grid)
+        monet_cpu = self.monet.detach().cpu()
+        photo_cpu = self.photo.detach().cpu()
+        fake_photo_cpu = self.fake_photo.detach().cpu()
+        fake_monet_cpu = self.fake_monet.detach().cpu()
 
+        fig_monet, ax = plt.subplots(1, 1)
+        plot_color_curve(ax, monet_cpu[0], label="monet", c="r")
+        plot_color_curve(ax, fake_photo_cpu[0], label="fake_photo", c="r", linestyle='--')
+        plot_color_curve(ax, photo_cpu[0], label="photo", c="blue")
+        plot_color_curve(ax, fake_monet_cpu[0], label="fake_monet", c="blue", linestyle='--')
+        ax.legend()
+        plot_tb = plot_to_image(fig_monet)
+
+        all_images = torch.cat([fake_photo_cpu, monet_cpu, photo_cpu, fake_monet_cpu])
+        all_grid = torchvision.utils.make_grid(to_01(all_images).cpu(), ncol=4)
+        # create grid of images
+
+        # reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
+        # reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
+
+        # write to tensorboard
+        self.writer.add_image("[train] photo", all_grid, self.iteration)
+        self.writer.add_image("Color curves", plot_tb, self.iteration)
+
+        # writer.add_image('reconstructed_photo', reconstructed_photo_grid)
+        # writer.add_image('reconstructed_monet', reconstructed_monet_grid)
 
     def test_one_epoch(self, epoch):
         self.G_photo.eval()
@@ -233,22 +261,20 @@ class Trainer:
         self.D_photo.eval()
         self.G_monet.eval()
 
-        photo = photo_dataset_test[0].unsqueeze(0).to(device)
-        monet = monet_dataset_test[0].unsqueeze(0).to(device)
+        self.photo = photo_dataset_test[0].unsqueeze(0).to(device)
+        self.monet = monet_dataset_test[0].unsqueeze(0).to(device)
         with torch.no_grad():
-            fake_monet = self.G_monet(photo)
-            fake_photo = self.G_photo(monet)
-            reconstructed_photo = self.G_photo(fake_monet)
-            reconstructed_monet = self.G_monet(fake_photo)
+            self.fake_monet = self.G_monet(self.photo)
+            self.fake_photo = self.G_photo(self.monet)
+            reconstructed_photo = self.G_photo(self.fake_monet)
+            reconstructed_monet = self.G_monet(self.fake_photo)
 
-            monet_cpu = monet.detach().cpu()
-            fake_photo_cpu = fake_photo.detach().cpu()
-
-
+            monet_cpu = self.monet.detach().cpu()
+            fake_photo_cpu = self.fake_photo.detach().cpu()
 
             monet_grid = torchvision.utils.make_grid(monet_cpu)
-            photo_grid = torchvision.utils.make_grid(photo.detach().cpu())
-            fake_monet_grid = torchvision.utils.make_grid(fake_monet.detach().cpu())
+            photo_grid = torchvision.utils.make_grid(self.photo.detach().cpu())
+            fake_monet_grid = torchvision.utils.make_grid(self.fake_monet.detach().cpu())
             fake_photo_grid = torchvision.utils.make_grid(fake_photo_cpu)
             reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
             reconstructed_monet_grid = torchvision.utils.make_grid(reconstructed_monet.cpu())
@@ -287,6 +313,8 @@ if __name__=="__main__":
     momentum = 0.9
     l = 2 # ratio CYCLE loss / GAN LOSS
     m = l * 0.5
+    # size of batch for discriminators
+    n_batch_disc = 10
 
 
 
@@ -318,7 +346,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = None
+    path = "runs/fit/20211128-210316/models"
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -335,7 +363,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=340)
+    trainer = Trainer(summary_dir, path=path, epoch=475)
 
     trainer.run()
 
