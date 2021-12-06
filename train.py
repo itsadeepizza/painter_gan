@@ -20,8 +20,8 @@ def gan_loss(test, label):
     else:
         label = torch.zeros(test.shape, device=device)
     #loss = F.binary_cross_entropy_with_logits(test, label)
-    loss = F.mse_loss(test, label)
-    #loss = F.l1_loss(test, label)
+    #loss = F.mse_loss(test, label)
+    loss = F.l1_loss(test, label)
     return loss
 
 
@@ -71,6 +71,33 @@ class Trainer:
         self.fake_monets = []
 
 
+    def _train_disc_helper(self, D, opt, reals, fakes):
+        """Train a discriminator using a batch of images"""
+        enable_grad([D], True)
+        dloss = torch.zeros(1).to(device)
+        opt.zero_grad()
+        for real, fake in zip(reals, fakes):
+            dloss_real = gan_loss(D(real), 1)
+            dloss_fake = gan_loss(D(fake), 0)
+            dloss += (dloss_real + dloss_fake).sum()
+        # update model
+        dloss.backward()
+        opt.step()
+        return dloss.item()
+
+    def train_discriminator_photo(self, epoch, iter):
+        dloss_photo = self._train_disc_helper(self.D_photo, self.opt_Dp, self.real_photos, self.fake_photos)
+        self.writer.add_scalar("d_photo loss",
+                               dloss_photo / len(self.real_photos),
+                               self.iteration)
+        return dloss_photo
+
+    def train_discriminator_monet(self, epoch, iter):
+        dloss_monet = self._train_disc_helper(self.D_photo, self.opt_Dp, self.real_photos, self.fake_photos)
+        self.writer.add_scalar("d_monet loss",
+                               dloss_monet / len(self.real_photos),
+                               self.iteration)
+        return dloss_monet
 
     def train_discriminators(self, epoch, iter):
 
@@ -95,17 +122,10 @@ class Trainer:
         self.opt_Dp.step()
         self.opt_Dm.step()
 
-        # report loss to tensorboard
-        self.writer.add_scalar("d_photo loss",
-                          dloss_photo.item()/len(self.real_photos),
-                          iter)
 
-        self.writer.add_scalar("d_monet loss",
-                          dloss_monet.item()/len(self.real_photos),
-                          iter)
-
-    def train_generators(self, dumb=False):
-        enable_grad([self.G_photo, self.G_monet], True)
+    def train_generators(self, dumb=False, train_monet=True, train_photo=True):
+        enable_grad([self.G_photo], train_photo)
+        enable_grad([self.G_monet], train_monet)
         enable_grad([self.D_photo, self.D_monet], False)
 
         self.opt_G_photo.zero_grad()
@@ -233,6 +253,7 @@ class Trainer:
         fake_photo_cpu = self.fake_photo.detach().cpu()
         fake_monet_cpu = self.fake_monet.detach().cpu()
 
+        # Create color level curve image
         fig_monet, ax = plt.subplots(1, 1)
         plot_color_curve(ax, monet_cpu[0], label="monet", c="r")
         plot_color_curve(ax, fake_photo_cpu[0], label="fake_photo", c="r", linestyle='--')
@@ -240,7 +261,8 @@ class Trainer:
         plot_color_curve(ax, fake_monet_cpu[0], label="fake_monet", c="blue", linestyle='--')
         ax.legend()
         plot_tb = plot_to_image(fig_monet)
-
+        plt.close(fig_monet)
+        # Make a grid of all images with 4 rows
         all_images = torch.cat([fake_photo_cpu, monet_cpu, photo_cpu, fake_monet_cpu])
         all_grid = torchvision.utils.make_grid(to_01(all_images).cpu(), ncol=4)
         # create grid of images
@@ -308,13 +330,15 @@ if __name__=="__main__":
     # CHOICE OF HYPERPARAMETERS
     #=============================
     num_epochs = 4000
-    batch_size = 8
+    batch_size = 10
     lr = 0.0002 #0.0002
     momentum = 0.9
-    l = 2 # ratio CYCLE loss / GAN LOSS
+    l = 10 # ratio CYCLE loss / GAN LOSS
     m = l * 0.5
     # size of batch for discriminators
-    n_batch_disc = 10
+    n_batch_disc = 1
+    threshold = 1
+    rolling_av_size = 5
 
 
 
@@ -346,7 +370,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = "runs/fit/20211128-210316/models"
+    path = None
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -363,7 +387,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=475)
+    trainer = Trainer(summary_dir, path=path, epoch=470)
 
     trainer.run()
 

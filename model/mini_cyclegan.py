@@ -3,10 +3,10 @@ from icecream import ic
 from torch.nn import Module
 
 
-class ConvInstNormSigm(torch.nn.Sequential):
+class ConvInstSigm(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
-        super(ConvInstNormSigm, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+        super(ConvInstSigm, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
         torch.nn.Sigmoid())
 
 class ConvInstNormRelu(torch.nn.Sequential):
@@ -48,7 +48,7 @@ class Generator(Module):
         self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=1, output_padding=1) #u128
         self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1)  # u64
 
-        self.c4 = ConvInstNormSigm(in_channels=64, out_channels=3, kernel_size=7, stride=1, padding=3)  # c7s1-3
+        self.c4 = ConvInstSigm(in_channels=64, out_channels=3, kernel_size=7, stride=1, padding=3)  # c7s1-3
 
 
     def forward(self, x):
@@ -75,11 +75,11 @@ class Generator(Module):
 class Discriminator(Module):
     def __init__(self):
         super(Discriminator, self).__init__()
-        self.c1 = torch.nn.Conv2d(3, 64, kernel_size=4, stride=2) # C64 without instance norm
-        self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=4, stride=2)  # C128
-        self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=4, stride=2)  # C256
-        self.c4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=512, kernel_size=4, stride=2)  # C512
-        self.c5 = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=1)
+        self.c1 = torch.nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1) # C64 without instance norm
+        self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1)  # C128
+        self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=4, stride=2, padding=1)  # C256
+        self.c4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=512, kernel_size=4, stride=1, padding=1)  # C512
+        self.o = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=2, padding=1)
 
     def forward(self, x):
         x = self.c1(x)
@@ -87,8 +87,9 @@ class Discriminator(Module):
         x = self.c2(x)
         x = self.c3(x)
         x = self.c4(x)
-        x = self.c5(x)
-        #x = x.mean([2,3]) #TODO loss for each patch
+        x = self.o(x)
+        #x = torch.sigmoid(x)
+        x = x.mean([2,3]) #TODO loss for each patch
         return x
 
 #generator
