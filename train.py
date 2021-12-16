@@ -16,18 +16,30 @@ import numpy as np
  - Aggiungere bias ?
  - Mettere il dropout
  FATTO! - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
- - implementare samplefake
+ - implementare fakesampler
  FATTO! - Due layer per il residual block
-
-
 
 
 """
 
 
+class FakeSampler():
+    import random
+    def __init__(self, size=50):
+        self.samples = []
+        self.size = size
 
+    def add(self, sample):
+        """Add a sample to sampler"""
+        self.samples.append(sample)
 
-
+    def get(self):
+        """Get a sample and remove it from the list if there are already size samples"""
+        list_size = len(self.samples)
+        idx = random.randint(0, list_size - 1)
+        if list_size < self.size:
+            return self.samples[idx]
+        return self.samples.pop(idx)
 
 
 
@@ -82,38 +94,33 @@ class Trainer:
 
         self.writer = SummaryWriter(summary_dir)
 
-        #initialise discriminators batch
-        self.real_photos = []
-        self.fake_photos = []
-        self.real_monets = []
-        self.fake_monets = []
 
 
-    def _train_disc_helper(self, D, opt, reals, fakes):
+    def _train_disc_helper(self, D, opt, real, fake_sampler):
         """Train a discriminator using a batch of images"""
         enable_grad([D], True)
         dloss = torch.zeros(1).to(device)
         opt.zero_grad()
-        for real, fake in zip(reals, fakes):
-            dloss_real = gan_loss(D(real), 1)
-            dloss_fake = gan_loss(D(fake), 0)
-            dloss += (dloss_real + dloss_fake).sum()
+        dloss_real = gan_loss(D(real), 1)
+        fake = fake_sampler.get()
+        dloss_fake = gan_loss(D(fake), 0)
+        dloss += (dloss_real + dloss_fake).sum()
         # update model
         dloss.backward()
         opt.step()
         return dloss.item()
 
     def train_discriminator_photo(self, epoch, iter):
-        dloss_photo = self._train_disc_helper(self.D_photo, self.opt_Dp, self.real_photos, self.fake_photos)
+        dloss_photo = self._train_disc_helper(self.D_photo, self.opt_Dp, self.photo, self.fake_photo_sampler)
         self.writer.add_scalar("d_photo loss",
-                               dloss_photo / len(self.real_photos),
+                               dloss_photo,
                                self.iteration)
         return dloss_photo
 
     def train_discriminator_monet(self, epoch, iter):
-        dloss_monet = self._train_disc_helper(self.D_photo, self.opt_Dp, self.real_photos, self.fake_photos)
+        dloss_monet = self._train_disc_helper(self.D_monet, self.opt_Dm, self.monet, self.fake_monet_sampler)
         self.writer.add_scalar("d_monet loss",
-                               dloss_monet / len(self.real_photos),
+                               dloss_monet,
                                self.iteration)
         return dloss_monet
 
@@ -238,8 +245,9 @@ class Trainer:
             # Add last images to discriminator batch
             #=======================================
 
-            # update rolling discriminator batch
-            self.update_discriminator_batch()
+            # update fake_samplers
+            self.fake_monet_sampler.add(self.fake_monet.detach())
+            self.fake_photo_sampler.add(self.fake_photo.detach())
 
             self.train_generators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
             self.train_discriminators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
@@ -352,16 +360,20 @@ if __name__=="__main__":
     # CHOICE OF HYPERPARAMETERS
     #=============================
     num_epochs = 4000
-    batch_size = 8
+    batch_size = 6
     lr = 0.0002 #0.0002
-    momentum = 0.9
+
+    # Loss ratio parameters
     l = 10 # ratio CYCLE loss / GAN LOSS
     m = l * 0.5
-    # size of batch for discriminators
-    n_batch_disc = 3
-    threshold = 1
-    rolling_av_size = 10
+
+
+    # Parameters alternate training
     alternate_training = False
+    rolling_av_size = 10
+    threshold = 1
+    # PArameters fake sampler
+    sampler_size = 50
 
 
 
