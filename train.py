@@ -12,6 +12,24 @@ from icecream import ic
 import matplotlib.pyplot as plt
 import numpy as np
 
+"""
+ - Aggiungere bias ?
+ - Mettere il dropout
+ - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
+ - implementare samplefake
+ - Due layer per il residual block
+
+
+
+
+"""
+
+
+
+
+
+
+
 
 def gan_loss(test, label):
     import torch.nn.functional as F
@@ -330,15 +348,15 @@ if __name__=="__main__":
     # CHOICE OF HYPERPARAMETERS
     #=============================
     num_epochs = 4000
-    batch_size = 10
+    batch_size = 8
     lr = 0.0002 #0.0002
     momentum = 0.9
     l = 10 # ratio CYCLE loss / GAN LOSS
     m = l * 0.5
     # size of batch for discriminators
-    n_batch_disc = 1
+    n_batch_disc = 3
     threshold = 1
-    rolling_av_size = 5
+    rolling_av_size = 10
 
 
 
