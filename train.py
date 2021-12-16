@@ -294,7 +294,7 @@ class Trainer:
         plt.close(fig_monet)
         # Make a grid of all images with 4 rows
         all_images = torch.cat([fake_photo_cpu, monet_cpu, photo_cpu, fake_monet_cpu])
-        all_grid = torchvision.utils.make_grid(to_01(all_images).cpu(), ncol=4)
+        all_grid = torchvision.utils.make_grid(to_01(all_images).cpu(), nrow=batch_size)
         # create grid of images
 
         # reconstructed_photo_grid = torchvision.utils.make_grid(reconstructed_photo.cpu())
@@ -360,7 +360,7 @@ if __name__=="__main__":
     # CHOICE OF HYPERPARAMETERS
     #=============================
     num_epochs = 4000
-    batch_size = 6
+    batch_size = 5
     lr = 0.0002 #0.0002
 
     # Loss ratio parameters
