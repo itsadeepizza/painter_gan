@@ -15,9 +15,9 @@ import numpy as np
 """
  - Aggiungere bias ?
  - Mettere il dropout
- - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
+ FATTO! - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
  - implementare samplefake
- - Due layer per il residual block
+ FATTO! - Due layer per il residual block
 
 
 
@@ -160,8 +160,12 @@ class Trainer:
         #ic("after", fake_photo.requires_grad)
 
         #Identity loss
-        id_loss_G_photo = identity_loss(self.monet, self.fake_photo)
-        id_loss_G_monet = identity_loss(self.photo, self.fake_monet)
+        # generate clones (monet and photo are transformed to images in the same set
+        self.clone_monet = self.G_monet(self.monet)
+        self.clone_photo = self.G_photo(self.photo)
+
+        id_loss_G_photo = identity_loss(self.photo, self.clone_photo)
+        id_loss_G_monet = identity_loss(self.monet, self.clone_monet)
         id_loss = (id_loss_G_photo + id_loss_G_monet).sum()
         #print(id_loss.requires_grad)
 
