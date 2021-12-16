@@ -361,6 +361,7 @@ if __name__=="__main__":
     n_batch_disc = 3
     threshold = 1
     rolling_av_size = 10
+    alternate_training = False
 
 
 
