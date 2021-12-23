@@ -15,8 +15,11 @@ import numpy as np
 """
  - Aggiungere bias ?
  - Mettere il dropout
+ - Reflection padding
+ - Controllare la patchgan
+ - cambiare il lr con l'avnazare delle epoch
  FATTO! - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
- - implementare fakesampler
+ FATTO! - implementare fakesampler
  FATTO! - Due layer per il residual block
 
 
@@ -405,7 +408,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = None
+    path = "runs/fit/20211216-230745/models"
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -422,7 +425,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=470)
+    trainer = Trainer(summary_dir, path=path, epoch=230)
 
     trainer.run()
 
