@@ -45,6 +45,21 @@ class FakeSampler():
         return self.samples.pop(idx)
 
 
+class RollingAverage:
+    def __init__(self, size=10):
+        self.pool = [0] * size
+        self.idx = 0
+        self.size = size
+
+    def add(self, x):
+        self.pool[self.idx] = x
+        self.idx += 1
+        if self.idx == self.size:
+            self.idx = 0
+
+    def mean(self):
+        return np.mean(self.pool)
+
 
 def gan_loss(test, label):
     import torch.nn.functional as F
@@ -78,6 +93,15 @@ class Trainer:
         self.G_monet = Generator().to(device)  # monet generator
         self.D_monet = Discriminator().to(device)  # 1=real, 0=fake
         self.D_photo = Discriminator().to(device)
+
+        self.avg_disc_photo = RollingAverage(rolling_av_size)
+        self.avg_disc_monet = RollingAverage(rolling_av_size)
+        self.avg_gen_photo = RollingAverage(rolling_av_size)
+        self.avg_gen_monet = RollingAverage(rolling_av_size)
+
+        self.fake_photo_sampler = FakeSampler(sampler_size)
+        self.fake_monet_sampler = FakeSampler(sampler_size)
+
         if path is not None:
             #
             self.G_photo.load_state_dict(torch.load(path + f"/G_photo_Ep{epoch:03d}.pth"))
@@ -127,28 +151,6 @@ class Trainer:
                                self.iteration)
         return dloss_monet
 
-    def train_discriminators(self, epoch, iter):
-
-        enable_grad([self.D_photo, self.D_monet], True)
-        dloss_photo = torch.zeros(1).to(device)
-        dloss_monet = torch.zeros(1).to(device)
-        self.opt_Dp.zero_grad()
-        self.opt_Dm.zero_grad()
-        for real_photo, fake_photo, real_monet, fake_monet in zip(self.real_photos, self.fake_photos, self.real_monets, self.fake_monets):
-            # D_photo vs G_photo
-            dloss_photo_real = gan_loss(self.D_photo(real_photo), 1)
-            dloss_photo_fake = gan_loss(self.D_photo(fake_photo), 0)
-            dloss_photo += (dloss_photo_real + dloss_photo_fake).sum()
-
-            # D_monet vs G_monet
-            dloss_monet_real = gan_loss(self.D_monet(real_monet), 1)
-            dloss_monet_fake = gan_loss(self.D_monet(fake_monet), 0)
-            dloss_monet += (dloss_monet_real + dloss_monet_fake).sum()
-        # update model
-        dloss_photo.backward()
-        dloss_monet.backward()
-        self.opt_Dp.step()
-        self.opt_Dm.step()
 
 
     def train_generators(self, dumb=False, train_monet=True, train_photo=True):
@@ -186,7 +188,6 @@ class Trainer:
             cycle_losses = (cycleloss_G_photoG_monet + cycleloss_G_monetG_photo).sum()
 
             # GAN loss generator
-
             gloss_monet_fake = gan_loss(self.D_monet(self.fake_monet), 1)
             floss_photo_fake = gan_loss(self.D_photo(self.fake_photo), 1)
             gan_generator_losses = gloss_monet_fake.sum() + floss_photo_fake.sum()
@@ -195,23 +196,30 @@ class Trainer:
         else:
             generator_loss = m * id_loss
 
-        generator_loss.backward()
+        if train_photo or train_monet:
+            generator_loss.backward()
 
         # Update backpropagation for generators
         self.opt_G_photo.step()
         self.opt_G_monet.step()
 
 
+        if not dumb:
+            self.writer.add_scalar("cycle loss",
+                              cycle_losses.item(),
+                              self.iteration)
+            self.writer.add_scalar("gan G_photo loss",
+                              floss_photo_fake.item(),
+                              self.iteration)
+            self.writer.add_scalar("gan G_monetloss",
+                              gloss_monet_fake.item(),
+                              self.iteration)
 
-        self.writer.add_scalar("cycle loss",
-                          cycle_losses.item(),
-                          iter)
-        self.writer.add_scalar("gan G_photo loss",
-                          floss_photo_fake.item(),
-                          iter)
-        self.writer.add_scalar("gan G_monetloss",
-                          gloss_monet_fake.item(),
-                          iter)
+        self.writer.add_scalar("Identity loss",
+                               id_loss.item(),
+                               self.iteration)
+
+        return gloss_monet_fake.item(), floss_photo_fake.item()
 
     def train_one_epoch(self, epoch, photo_dl, monet_dl):
         self.G_photo.train()
@@ -242,7 +250,15 @@ class Trainer:
 
             self.iteration = epoch * n + i
 
-            self.train_generators()
+            better_disc_monet = bool(self.avg_gen_monet.mean() > (self.avg_disc_monet.mean() * threshold))
+            better_disc_photo = bool(self.avg_gen_photo.mean() > (self.avg_disc_photo.mean() * threshold))
+
+            if alternate_training:
+                print("Monet Discriminator > Generator: ", better_disc_monet, "Photo Discriminator > Generator: ", better_disc_photo)
+
+            disc_monet_loss_gen, disc_photo_loss_gen = self.train_generators(False, better_disc_monet or not alternate_training, better_disc_photo or not alternate_training)
+            self.avg_gen_monet.add(disc_monet_loss_gen)
+            self.avg_gen_photo.add(disc_photo_loss_gen)
 
             #=========================================
             # Add last images to discriminator batch
@@ -252,27 +268,18 @@ class Trainer:
             self.fake_monet_sampler.add(self.fake_monet.detach())
             self.fake_photo_sampler.add(self.fake_photo.detach())
 
-            self.train_generators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
-            self.train_discriminators(epoch, epoch * n + i, photo, fake_photo, monet, fake_monet)
+            if not better_disc_monet or not alternate_training:
+                disc_monet_loss_disc = self.train_discriminator_monet(epoch,  self.iteration)
+                self.avg_disc_monet.add(disc_monet_loss_disc)
 
+            if not better_disc_photo or not alternate_training:
+                disc_photo_loss_disc = self.train_discriminator_photo(epoch, self.iteration)
+                self.avg_disc_photo.add(disc_photo_loss_disc)
 
             # Upload images to tensorboard
             if i%7 == 0:
                 self.update_images_tensorboard()
 
-
-    def update_discriminator_batch(self):
-
-        if len(self.real_photos) >= n_batch_disc:
-            self.real_photos.pop()
-            self.fake_photos.pop()
-            self.real_monets.pop()
-            self.fake_monets.pop()
-
-        self.real_photos.append(self.photo)
-        self.fake_photos.append(self.fake_photo.detach())
-        self.real_monets.append(self.monet)
-        self.fake_monets.append(self.fake_monet.detach())
 
     def update_images_tensorboard(self):
         # Detach images
