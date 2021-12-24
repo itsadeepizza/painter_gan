@@ -89,10 +89,8 @@ class Generator(Module):
         x = x + self.r5(x)
         x = x + self.r6(x)
 
-
         x = self.u1(x)
         x = self.u2(x)
-        x = torch.nn.functional.pad(x, (0, 1, 0, 1), mode='replicate')
         x = self.c4(x)
         #x = torch.sigmoid(x)
         return x
