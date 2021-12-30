@@ -6,7 +6,13 @@ from torch.nn import Module
 class ConvInstSigm(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0, use_bias = True):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
-        super(ConvInstSigm, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias = use_bias),
+        super(ConvInstSigm, self).__init__(torch.nn.Conv2d(in_channels,
+                                                           out_channels,
+                                                           kernel_size=kernel_size,
+                                                           stride=stride,
+                                                           padding=padding,
+                                                           bias = use_bias,
+                                                           padding_mode="reflect"),
         torch.nn.Sigmoid())
 
 class ConvInstNormRelu(torch.nn.Sequential):
@@ -41,17 +47,26 @@ class TransposeConvInstNormRelu(torch.nn.Sequential):
 class ConvInstNormLeakyRelu(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0, use_bias = True):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
-        super(ConvInstNormLeakyRelu, self).__init__(torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias,),
+        super(ConvInstNormLeakyRelu, self).__init__(torch.nn.Conv2d(in_channels,
+                                                                    out_channels,
+                                                                    kernel_size=kernel_size,
+                                                                    stride=stride,
+                                                                    padding=padding,
+                                                                    bias=use_bias,
+                                                                    padding_mode="reflect"),
         torch.nn.InstanceNorm2d(out_channels), torch.nn.LeakyReLU(0.2))
 
 class ResidualBlock(torch.nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0, use_bias = True):
         """`kernel_size` x `kernel_size` Convolution-InstanceNorm-ReLU layer with `filters` filters and `stride` stride"""
         super(ResidualBlock, self).__init__(
-            torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias,),
+            torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias, padding_mode="reflect"),
+            #Dropout
+            torch.nn.Dropout(0.5),
             torch.nn.InstanceNorm2d(out_channels),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias,),
+
+            torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias, padding_mode="reflect",),
             torch.nn.InstanceNorm2d(out_channels),
         )
 
@@ -73,7 +88,6 @@ class Generator(Module):
         self.r7 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
         self.r8 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
         self.r9 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-
 
         self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=1, output_padding=1) #u128
         self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1)  # u64

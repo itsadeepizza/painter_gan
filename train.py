@@ -13,12 +13,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 """
- - Aggiungere bias ?
- - Mettere il dropout
- - Reflection padding
+ FATTO! Aggiungere bias ?
+ FATTO! Mettere il dropout
+ (QUASI) FATTO!) Reflection padding
  - Controllare la patchgan (ma mi pare uguale)
  - Fare data augmentation
- - provare immagini 256x256
+ FATTO! provare immagini 256x256
  - cambiare il lr con l'avnazare delle epoch
  
  FATTO! al 50% scegliere l'ultima foto 
@@ -379,7 +379,7 @@ if __name__=="__main__":
     # CHOICE OF HYPERPARAMETERS
     #=============================
     num_epochs = 4000
-    batch_size = 5
+    batch_size = 1
     lr = 0.0002 #0.0002
 
     # Loss ratio parameters
