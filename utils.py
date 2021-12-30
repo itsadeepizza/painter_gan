@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-import io
-import tensorflow as tf
+
+
 
 def show_set_images(imgs):
     """ Plot a list of images"""

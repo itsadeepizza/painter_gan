@@ -2,7 +2,7 @@ import torchvision
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from utils import plot_color_curve, plot_to_image
-from model.mini_cyclegan import Generator, Discriminator
+from model.maxi_cyclegan import Generator, Discriminator
 from loader import ImageDataset
 from tqdm import tqdm
 import random
@@ -424,7 +424,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = "runs/fit/20211216-230745/models"
+    path = None
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)

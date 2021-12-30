@@ -19,7 +19,8 @@ class ImageDataset(Dataset):
         # The first one is applied first
         crop = 128
         self.transform = transforms.Compose([
-            transforms.RandomCrop(crop),
+            # Choose if working on a 128x128 cropped image
+            #transforms.RandomCrop(crop),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor()
         ])
