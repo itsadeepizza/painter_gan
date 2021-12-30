@@ -16,8 +16,12 @@ import numpy as np
  - Aggiungere bias ?
  - Mettere il dropout
  - Reflection padding
- - Controllare la patchgan
+ - Controllare la patchgan (ma mi pare uguale)
+ - Fare data augmentation
+ - provare immagini 256x256
  - cambiare il lr con l'avnazare delle epoch
+ 
+ FATTO! al 50% scegliere l'ultima foto 
  FATTO! - Applicare l'identity loss su immagini che corrispondono all'insieme d'arrivo previsto (e non quello di partenza)
  FATTO! - implementare fakesampler
  FATTO! - Due layer per il residual block
@@ -40,8 +44,13 @@ class FakeSampler():
         """Get a sample and remove it from the list if there are already size samples"""
         list_size = len(self.samples)
         idx = random.randint(0, list_size - 1)
+
+        # Take the last image 50% times
+        if random.randint(0, 1) == 0:
+            idx = -1
         if list_size < self.size:
             return self.samples[idx]
+        # return the image and remove it
         return self.samples.pop(idx)
 
 
