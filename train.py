@@ -11,6 +11,10 @@ import os
 from icecream import ic
 import matplotlib.pyplot as plt
 import numpy as np
+from torch.profiler import profile, tensorboard_trace_handler
+
+
+
 
 """
  FATTO! Aggiungere bias ?
@@ -135,15 +139,17 @@ class Trainer:
     def _train_disc_helper(self, D, opt, real, fake_sampler):
         """Train a discriminator using a batch of images"""
         enable_grad([D], True)
-        dloss = torch.zeros(1).to(device)
+        #dloss = torch.zeros(1).to(device)
         opt.zero_grad()
         dloss_real = gan_loss(D(real), 1)
         fake = fake_sampler.get()
         dloss_fake = gan_loss(D(fake), 0)
-        dloss += (dloss_real + dloss_fake).sum()
+        dloss = (dloss_real + dloss_fake).sum()
         # update model
         dloss.backward()
         opt.step()
+        if not calculate_loss:
+            return 0
         return dloss.item()
 
     def train_discriminator_photo(self, epoch, iter):
@@ -190,6 +196,7 @@ class Trainer:
         id_loss = (id_loss_G_photo + id_loss_G_monet).sum()
         #print(id_loss.requires_grad)
 
+
         if not dumb:
             # Cycle loss
             cycleloss_G_photoG_monet = cycle_loss(self.photo, reconstructed_photo)
@@ -212,82 +219,95 @@ class Trainer:
         self.opt_G_photo.step()
         self.opt_G_monet.step()
 
+        if calculate_loss:
+            if not dumb:
+                self.writer.add_scalar("cycle loss",
+                                  cycle_losses.item(),
+                                  self.iteration)
+                self.writer.add_scalar("gan G_photo loss",
+                                  floss_photo_fake.item(),
+                                  self.iteration)
+                self.writer.add_scalar("gan G_monetloss",
+                                  gloss_monet_fake.item(),
+                                  self.iteration)
 
-        if not dumb:
-            self.writer.add_scalar("cycle loss",
-                              cycle_losses.item(),
-                              self.iteration)
-            self.writer.add_scalar("gan G_photo loss",
-                              floss_photo_fake.item(),
-                              self.iteration)
-            self.writer.add_scalar("gan G_monetloss",
-                              gloss_monet_fake.item(),
-                              self.iteration)
+            self.writer.add_scalar("Identity loss",
+                                   id_loss.item(),
+                                   self.iteration)
 
-        self.writer.add_scalar("Identity loss",
-                               id_loss.item(),
-                               self.iteration)
-
-        return gloss_monet_fake.item(), floss_photo_fake.item()
+            return gloss_monet_fake.item(), floss_photo_fake.item()
+        return 0, 0
 
     def train_one_epoch(self, epoch, photo_dl, monet_dl):
-        self.G_photo.train()
-        self.G_monet.train()
-        self.D_photo.train()
-        self.D_monet.train()
+        with torch.profiler.profile(
+                schedule=torch.profiler.schedule(
+                    wait=2,
+                    warmup=2,
+                    active=6,
+                    repeat=1),
+                on_trace_ready=tensorboard_trace_handler('runs'),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True
+        ) as profiler:
+            self.G_photo.train()
+            self.G_monet.train()
+            self.D_photo.train()
+            self.D_monet.train()
 
-        n = min(len(photo_dl), len(monet_dl))
+            n = min(len(photo_dl), len(monet_dl))
 
-        # Create iterator
-        monet_iterator = iter(monet_dl)
-        photo_iterator = iter(photo_dl)
-        for i in tqdm(range(n)):
-            # iterate through the dataloader
-            self.photo = next(photo_iterator)
-            self.monet = next(monet_iterator)
-            # Load to GPU
-            self.photo = self.photo.to(device)
-            self.monet = self.monet.to(device)
+            # Create iterator
+            monet_iterator = iter(monet_dl)
+            photo_iterator = iter(photo_dl)
+            for i in tqdm(range(n)):
+                # iterate through the dataloader
+                self.photo = next(photo_iterator)
+                self.monet = next(monet_iterator)
+                # Load to GPU
+                self.photo = self.photo.to(device)
+                self.monet = self.monet.to(device)
 
-            # Enable all grads
-            enable_grad([self.G_photo, self.G_monet], True)
-            enable_grad([self.D_photo, self.D_monet], True)
+                # Enable all grads
+                enable_grad([self.G_photo, self.G_monet], True)
+                enable_grad([self.D_photo, self.D_monet], True)
 
-            #=============================
-            # IMAGE GENERATION
-            #=============================
+                #=============================
+                # IMAGE GENERATION
+                #=============================
 
-            self.iteration = epoch * n + i
+                self.iteration = epoch * n + i
 
-            better_disc_monet = bool(self.avg_gen_monet.mean() > (self.avg_disc_monet.mean() * threshold))
-            better_disc_photo = bool(self.avg_gen_photo.mean() > (self.avg_disc_photo.mean() * threshold))
+                better_disc_monet = bool(self.avg_gen_monet.mean() > (self.avg_disc_monet.mean() * threshold))
+                better_disc_photo = bool(self.avg_gen_photo.mean() > (self.avg_disc_photo.mean() * threshold))
 
-            if alternate_training:
-                print("Monet Discriminator > Generator: ", better_disc_monet, "Photo Discriminator > Generator: ", better_disc_photo)
+                if alternate_training:
+                    print("Monet Discriminator > Generator: ", better_disc_monet, "Photo Discriminator > Generator: ", better_disc_photo)
 
-            disc_monet_loss_gen, disc_photo_loss_gen = self.train_generators(False, better_disc_monet or not alternate_training, better_disc_photo or not alternate_training)
-            self.avg_gen_monet.add(disc_monet_loss_gen)
-            self.avg_gen_photo.add(disc_photo_loss_gen)
+                disc_monet_loss_gen, disc_photo_loss_gen = self.train_generators(False, better_disc_monet or not alternate_training, better_disc_photo or not alternate_training)
+                self.avg_gen_monet.add(disc_monet_loss_gen)
+                self.avg_gen_photo.add(disc_photo_loss_gen)
 
-            #=========================================
-            # Add last images to discriminator batch
-            #=======================================
+                #=========================================
+                # Add last images to discriminator batch
+                #=======================================
 
-            # update fake_samplers
-            self.fake_monet_sampler.add(self.fake_monet.detach())
-            self.fake_photo_sampler.add(self.fake_photo.detach())
+                # update fake_samplers
+                self.fake_monet_sampler.add(self.fake_monet.detach())
+                self.fake_photo_sampler.add(self.fake_photo.detach())
 
-            if not better_disc_monet or not alternate_training:
-                disc_monet_loss_disc = self.train_discriminator_monet(epoch,  self.iteration)
-                self.avg_disc_monet.add(disc_monet_loss_disc)
+                if not better_disc_monet or not alternate_training:
+                    disc_monet_loss_disc = self.train_discriminator_monet(epoch,  self.iteration)
+                    self.avg_disc_monet.add(disc_monet_loss_disc)
 
-            if not better_disc_photo or not alternate_training:
-                disc_photo_loss_disc = self.train_discriminator_photo(epoch, self.iteration)
-                self.avg_disc_photo.add(disc_photo_loss_disc)
+                if not better_disc_photo or not alternate_training:
+                    disc_photo_loss_disc = self.train_discriminator_photo(epoch, self.iteration)
+                    self.avg_disc_photo.add(disc_photo_loss_disc)
 
-            # Upload images to tensorboard
-            if i%7 == 0:
-                self.update_images_tensorboard()
+                # Upload images to tensorboard
+                if i%7 == 0:
+                    self.update_images_tensorboard()
+                profiler.step()
 
 
     def update_images_tensorboard(self):
@@ -367,7 +387,9 @@ class Trainer:
     def run(self):
         for epoch in tqdm(range(1, num_epochs)):
             print("Epoch:", epoch)
+
             self.train_one_epoch(epoch, photo_dataloader, monet_dataloader)
+
             self.test_one_epoch(epoch)
 
             if epoch % 5 == 0:
@@ -393,6 +415,7 @@ if __name__=="__main__":
     threshold = 1
     # PArameters fake sampler
     sampler_size = 50
+    calculate_loss = False
 
 
 
@@ -405,8 +428,10 @@ if __name__=="__main__":
     # Load dataset
     monet_path_train = "dataset/train/monet/"
     photo_path_train = "dataset/train/photos/"
-    monet_path_test = "dataset/test/monet/"
-    photo_path_test = "dataset/test/photos/"
+    monet_path_test = "dataset/train/monet/"
+    photo_path_test = "dataset/train/photos/"
+    monet_path_train = "dataset/monet2photo/trainA/"
+    photo_path_train = "dataset/monet2photo/trainB/"
     monet_dataset = ImageDataset(monet_path_train)
     photo_dataset = ImageDataset(photo_path_train)
     monet_dataset_test = ImageDataset(monet_path_test)
@@ -424,7 +449,7 @@ if __name__=="__main__":
 
     # Load model (if path is None create a new model
     # path = "runs/fit/20211101-071822/models"
-    path = None
+    path = "runs/fit/20211231-001536/models"
 
 
     photo_sampler = torch.utils.data.RandomSampler(photo_dataset, replacement=False)
@@ -441,7 +466,7 @@ if __name__=="__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
 
-    trainer = Trainer(summary_dir, path=path, epoch=230)
+    trainer = Trainer(summary_dir, path=path, epoch=15)
 
     trainer.run()
 
