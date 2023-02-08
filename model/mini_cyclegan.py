@@ -82,12 +82,22 @@ class Generator(Module):
         x = self.c2(x)
         x = self.c3(x)
 
-        x = x + self.r1(x)
-        x = x + self.r2(x)
-        x = x + self.r3(x)
-        x = x + self.r4(x)
-        x = x + self.r5(x)
-        x = x + self.r6(x)
+        TODO: CHeck how residual works
+        x_residual = x.clone()
+        x = self.r1(x)
+        x = self.r2(x)
+        x = self.r3(x)
+        x = self.r4(x)
+        x = self.r5(x)
+        x = self.r6(x)
+        x = x + r_residual
+
+        # x = x + self.r1(x)
+        # x = x + self.r2(x)
+        # x = x + self.r3(x)
+        # x = x + self.r4(x)
+        # x = x + self.r5(x)
+        # x = x + self.r6(x)
 
         x = self.u1(x)
         x = self.u2(x)
