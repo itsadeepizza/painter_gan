@@ -1,4 +1,5 @@
 import torch
+# Icecream is a library to print debug information in a more readable format
 from icecream import ic
 from torch.nn import Module
 
@@ -82,7 +83,7 @@ class Generator(Module):
         x = self.c2(x)
         x = self.c3(x)
 
-        TODO: CHeck how residual works
+        # TODO: CHeck how residual works
         x_residual = x.clone()
         x = self.r1(x)
         x = self.r2(x)
@@ -90,7 +91,7 @@ class Generator(Module):
         x = self.r4(x)
         x = self.r5(x)
         x = self.r6(x)
-        x = x + r_residual
+        x = x + x_residual
 
         # x = x + self.r1(x)
         # x = x + self.r2(x)

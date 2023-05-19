@@ -8,7 +8,6 @@ from tqdm import tqdm
 import random
 import datetime
 import os
-from icecream import ic
 import matplotlib.pyplot as plt
 import numpy as np
 from torch.profiler import profile, tensorboard_trace_handler
@@ -81,8 +80,8 @@ def gan_loss(test, label):
     else:
         label = torch.zeros(test.shape, device=device)
     #loss = F.binary_cross_entropy_with_logits(test, label)
-    #loss = F.mse_loss(test, label)
-    loss = F.l1_loss(test, label)
+    loss = F.mse_loss(test, label)
+    # loss = F.l1_loss(test, label)
     return loss
 
 

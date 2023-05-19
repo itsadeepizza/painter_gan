@@ -7,7 +7,9 @@ import itertools
 import glob, os
 from PIL import Image
 import numpy as np
-from icecream import ic
+
+img_height = 256
+img_width = 256
 
 class ImageDataset(Dataset):
     """ Dataloader for Monet paintings AND photos"""
@@ -24,6 +26,11 @@ class ImageDataset(Dataset):
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor()
         ])
+        transforms_ = [
+            transforms.Resize(int(img_height * 1.12), Image.BICUBIC),
+            transforms.RandomCrop((img_height, img_width)),
+            transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
 
     def __len__(self):
         return len(self.images)

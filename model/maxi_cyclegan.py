@@ -1,5 +1,4 @@
 import torch
-from icecream import ic
 from torch.nn import Module
 
 
@@ -62,7 +61,8 @@ class ResidualBlock(torch.nn.Sequential):
         super(ResidualBlock, self).__init__(
             torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=use_bias, padding_mode="reflect"),
             #Dropout
-            torch.nn.Dropout(0.5),
+            # torch.nn.Dropout(0.5),
+            # torch.nn.InstanceNorm2d(out_channels),
             torch.nn.InstanceNorm2d(out_channels),
             torch.nn.ReLU(),
 
@@ -79,15 +79,15 @@ class Generator(Module):
         self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1)  #d128
         self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1)  # d256
 
-        self.r1 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r2 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r3 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r4 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r5 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        self.r6 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        #self.r7 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        #self.r8 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
-        #self.r9 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)  # R256
+        self.r1 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r2 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r3 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r4 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r5 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r6 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r7 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r8 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
+        self.r9 = ResidualBlock(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)  # R256
 
         self.u1 = TransposeConvInstNormRelu(in_channels=256, out_channels=128, kernel_size=3, stride=2, padding=1, output_padding=1) #u128
         self.u2 = TransposeConvInstNormRelu(in_channels=128, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1)  # u64
@@ -106,9 +106,9 @@ class Generator(Module):
         x = x + self.r4(x)
         x = x + self.r5(x)
         x = x + self.r6(x)
-        #x = x + self.r7(x)
-        #x = x + self.r8(x)
-        #x = x + self.r9(x)
+        x = x + self.r7(x)
+        x = x + self.r8(x)
+        x = x + self.r9(x)
 
         x = self.u1(x)
         x = self.u2(x)
@@ -124,7 +124,7 @@ class Discriminator(Module):
         self.c2 = ConvInstNormLeakyRelu(in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1)  # C128
         self.c3 = ConvInstNormLeakyRelu(in_channels=128, out_channels=256, kernel_size=4, stride=2, padding=1)  # C256
         self.c4 = ConvInstNormLeakyRelu(in_channels=256, out_channels=512, kernel_size=4, stride=1, padding=1)  # C512
-        self.o = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=4, padding=1)
+        self.o = torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=4, padding=1, stride=1)
 
     def forward(self, x):
         x = self.c1(x)
@@ -133,7 +133,7 @@ class Discriminator(Module):
         x = self.c3(x)
         x = self.c4(x)
         x = self.o(x)
-        #x = torch.sigmoid(x)
+        x = torch.sigmoid(x)
         #x = x.mean([2,3]) #TODO loss for each patch
         return x
 
